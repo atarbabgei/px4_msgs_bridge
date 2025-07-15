@@ -1,5 +1,5 @@
 #include <rclcpp/rclcpp.hpp>
-#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <px4_msgs/msg/vehicle_attitude.hpp>
 #include <px4_msgs/msg/vehicle_local_position.hpp>
 #include "px4_msgs_bridge/converter.hpp"
@@ -29,7 +29,7 @@ public:
       });
 
     // Create publisher for converted pose
-    pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(
+    pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
       "/vehicle/pose", 10);
 
     // Create timer for periodic publishing (20 Hz)
@@ -95,10 +95,10 @@ private:
     }
 
     // Convert and publish pose regardless of validity
-    auto pose_stamped = px4_msgs_bridge::PoseConverter::convert_vehicle_pose(
+    auto pose_with_cov = px4_msgs_bridge::PoseConverter::convert_vehicle_pose_with_covariance(
       latest_attitude_, latest_position_, "map");
     
-    pose_pub_->publish(pose_stamped);
+    pose_pub_->publish(pose_with_cov);
   }
 
   // Subscriptions
@@ -106,7 +106,7 @@ private:
   rclcpp::Subscription<px4_msgs::msg::VehicleLocalPosition>::SharedPtr position_sub_;
   
   // Publisher
-  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
   
   // Timer
   rclcpp::TimerBase::SharedPtr timer_;

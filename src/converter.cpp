@@ -5,31 +5,6 @@
 namespace px4_msgs_bridge
 {
 
-geometry_msgs::msg::PoseStamped PoseConverter::convert_vehicle_pose(
-  const px4_msgs::msg::VehicleAttitude & attitude,
-  const px4_msgs::msg::VehicleLocalPosition & position,
-  const std::string & frame_id)
-{
-  geometry_msgs::msg::PoseStamped pose_stamped;
-
-  // Set frame ID
-  pose_stamped.header.frame_id = frame_id;
-
-  // Use timestamp_sample if available, otherwise use timestamp
-  uint64_t timestamp_us = (attitude.timestamp_sample != 0) ? 
-                         attitude.timestamp_sample : attitude.timestamp;
-  pose_stamped.header.stamp = convert_timestamp(timestamp_us);
-
-  // Convert quaternion from NED to ENU
-  ned_to_enu_quaternion(attitude.q.data(), pose_stamped.pose.orientation);
-
-  // Convert position from NED to ENU
-  float pos_ned[3] = {position.x, position.y, position.z};
-  ned_to_enu_position(pos_ned, pose_stamped.pose.position);
-
-  return pose_stamped;
-}
-
 geometry_msgs::msg::PoseWithCovarianceStamped PoseConverter::convert_vehicle_pose_with_covariance(
   const px4_msgs::msg::VehicleAttitude & attitude,
   const px4_msgs::msg::VehicleLocalPosition & position,
