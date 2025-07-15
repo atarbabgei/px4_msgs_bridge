@@ -41,24 +41,9 @@ ament_target_dependencies(vehicle_pose_bridge
   std_msgs
 )
 
-# Create debug bridge node executable (publishes regardless of validity flags)
-add_executable(vehicle_pose_bridge_debug
-  src/bridge_node_debug.cpp
-)
-
-target_link_libraries(vehicle_pose_bridge_debug converter)
-
-ament_target_dependencies(vehicle_pose_bridge_debug
-  rclcpp
-  px4_msgs
-  geometry_msgs
-  std_msgs
-)
-
 # Install targets
 install(TARGETS
   vehicle_pose_bridge
-  vehicle_pose_bridge_debug
   DESTINATION lib/${PROJECT_NAME}
 )
 
