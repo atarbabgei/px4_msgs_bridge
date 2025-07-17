@@ -1,6 +1,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <nav_msgs/msg/path.hpp>
+#include <nav_msgs/msg/odometry.hpp>
 #include <px4_msgs/msg/vehicle_attitude.hpp>
 #include <px4_msgs/msg/vehicle_local_position.hpp>
 #include "px4_msgs_bridge/converter.hpp"
@@ -37,20 +38,28 @@ public:
     path_pub_ = this->create_publisher<nav_msgs::msg::Path>(
       "/vehicle/path", 10);
 
+    // Create publisher for vehicle odometry
+    odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>(
+      "/vehicle/odom", 10);
+
     // Initialize path message
     vehicle_path_.header.frame_id = "odom";
     
     // Declare parameters
     this->declare_parameter("unlimited_path", false);
     this->declare_parameter("max_path_size", 1000);
+    this->declare_parameter("publish_odom", true);
     
     // Get parameter values
     unlimited_path_ = this->get_parameter("unlimited_path").as_bool();
     trail_size_ = this->get_parameter("max_path_size").as_int();
+    publish_odom_ = this->get_parameter("publish_odom").as_bool();
     
     RCLCPP_INFO(this->get_logger(), "Vehicle pose bridge node started");
     RCLCPP_INFO(this->get_logger(), "Path settings - Unlimited: %s, Max size: %zu", 
                 unlimited_path_ ? "true" : "false", trail_size_);
+    RCLCPP_INFO(this->get_logger(), "Odometry publishing: %s", 
+                publish_odom_ ? "enabled" : "disabled");
   }
 
 private:
@@ -103,11 +112,17 @@ private:
     
     pose_pub_->publish(pose_with_cov);
     
+    // Convert and publish vehicle odometry (pose + twist) if enabled
+    if (publish_odom_) {
+      auto odometry_msg = convert_vehicle_odometry(pose_with_cov);
+      odom_pub_->publish(odometry_msg);
+    }
+    
     // Update and publish vehicle path
     update_vehicle_path(pose_with_cov);
     
     RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-      "Published vehicle pose with time diff: %lu us", time_diff);
+      "Published vehicle pose and odometry with time diff: %lu us", time_diff);
   }
 
   void update_vehicle_path(const geometry_msgs::msg::PoseWithCovarianceStamped& pose_msg)
@@ -137,6 +152,58 @@ private:
     }
   }
 
+  nav_msgs::msg::Odometry convert_vehicle_odometry(const geometry_msgs::msg::PoseWithCovarianceStamped& pose_msg)
+  {
+    nav_msgs::msg::Odometry odom_msg;
+    
+    // Copy header from pose message
+    odom_msg.header = pose_msg.header;
+    odom_msg.child_frame_id = "base_link";  // Vehicle body frame
+    
+    // Copy pose with covariance
+    odom_msg.pose = pose_msg.pose;
+    
+    // Convert velocity from PX4 local position (NED) to ROS (ENU)
+    // PX4: vx=north, vy=east, vz=down
+    // ROS: x=east, y=north, z=up
+    odom_msg.twist.twist.linear.x = latest_position_.vy;   // east
+    odom_msg.twist.twist.linear.y = latest_position_.vx;   // north  
+    odom_msg.twist.twist.linear.z = -latest_position_.vz;  // up (negate down)
+    
+    // Angular velocity - need to convert from body frame (FRD) to ENU
+    // For now, we don't have direct angular velocity from PX4 VehicleLocalPosition
+    // Set to zero until we add VehicleAngularVelocity subscription
+    odom_msg.twist.twist.angular.x = 0.0;
+    odom_msg.twist.twist.angular.y = 0.0;
+    odom_msg.twist.twist.angular.z = 0.0;
+    
+    // Set twist covariance matrix
+    // Initialize with zeros
+    std::fill(odom_msg.twist.covariance.begin(), odom_msg.twist.covariance.end(), 0.0);
+    
+    // Set diagonal elements based on velocity validity flags
+    double vel_variance = 0.1;  // Default velocity variance (m/s)^2
+    if (!latest_position_.v_xy_valid) {
+      vel_variance = 1.0;  // Higher uncertainty if velocity not valid
+    }
+    
+    // Velocity covariance matrix (6x6, row-major)
+    // [vx_var,   0,      0,      0,      0,      0    ]
+    // [0,      vy_var,   0,      0,      0,      0    ]
+    // [0,        0,    vz_var,   0,      0,      0    ]
+    // [0,        0,      0,    wx_var,   0,      0    ]
+    // [0,        0,      0,      0,    wy_var,   0    ]
+    // [0,        0,      0,      0,      0,    wz_var ]
+    odom_msg.twist.covariance[0] = vel_variance;   // vx
+    odom_msg.twist.covariance[7] = vel_variance;   // vy
+    odom_msg.twist.covariance[14] = latest_position_.v_z_valid ? vel_variance : 1.0;  // vz
+    odom_msg.twist.covariance[21] = 0.1;  // wx (angular velocity - unknown)
+    odom_msg.twist.covariance[28] = 0.1;  // wy
+    odom_msg.twist.covariance[35] = 0.1;  // wz
+    
+    return odom_msg;
+  }
+
   // Subscriptions
   rclcpp::Subscription<px4_msgs::msg::VehicleAttitude>::SharedPtr attitude_sub_;
   rclcpp::Subscription<px4_msgs::msg::VehicleLocalPosition>::SharedPtr position_sub_;
@@ -144,6 +211,7 @@ private:
   // Publishers
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
   
   // State storage
   px4_msgs::msg::VehicleAttitude latest_attitude_;
@@ -155,6 +223,7 @@ private:
   nav_msgs::msg::Path vehicle_path_;
   size_t trail_size_;
   bool unlimited_path_;
+  bool publish_odom_;
 };
 
 int main(int argc, char ** argv)

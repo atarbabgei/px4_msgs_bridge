@@ -19,10 +19,17 @@ def generate_launch_description():
         description='Maximum number of poses to keep in path when unlimited_path=false'
     )
     
+    publish_odom_arg = DeclareLaunchArgument(
+        'publish_odom',
+        default_value='true', 
+        description='Publish vehicle odometry (nav_msgs/Odometry) with pose and twist'
+    )
+    
     return LaunchDescription([
         # Launch arguments
         unlimited_path_arg,
         max_path_size_arg,
+        publish_odom_arg,
         
         # Vehicle pose bridge node - converts PX4 attitude/position to ROS pose
         Node(
@@ -33,6 +40,7 @@ def generate_launch_description():
             parameters=[{
                 'unlimited_path': LaunchConfiguration('unlimited_path'),
                 'max_path_size': LaunchConfiguration('max_path_size'),
+                'publish_odom': LaunchConfiguration('publish_odom'),
             }],
             remappings=[
                 # Add any topic remappings if needed
