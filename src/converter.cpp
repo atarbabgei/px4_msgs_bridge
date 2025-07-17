@@ -58,13 +58,12 @@ void PoseConverter::ned_to_enu_position(
   const float pos_ned[3], 
   geometry_msgs::msg::Point & pos_enu)
 {
-  // Convert from NED to ENU coordinate frame
-  // NED: X-North, Y-East, Z-Down
-  // ENU: X-East, Y-North, Z-Up
-  // Apply consistent mapping: East→X, North→Y, Up→Z
-  pos_enu.x = pos_ned[0];   // NED Y (East) → ENU X (East)
-  pos_enu.y = -pos_ned[1];   // NED X (North) → ENU Y (North)  
-  pos_enu.z = -pos_ned[2];  // NED Z (Down) → ENU Z (Up), negate
+  // Convert from NED to your custom coordinate frame
+  // PX4 NED: X-North, Y-East, Z-Down
+  // Your frame: X-North, Y=-East, Z=-Down (up)
+  pos_enu.x = pos_ned[0];   // NED X (North) → Your X (North)
+  pos_enu.y = -pos_ned[1];  // NED Y (East) → Your Y (-East), negate
+  pos_enu.z = -pos_ned[2];  // NED Z (Down) → Your Z (-Down = Up), negate
 }
 
 builtin_interfaces::msg::Time PoseConverter::convert_timestamp(uint64_t px4_timestamp_us)
@@ -91,12 +90,14 @@ void PoseConverter::set_pose_covariance(
   // [x, y, z, roll, pitch, yaw] x [x, y, z, roll, pitch, yaw]
   // Index calculation: row * 6 + col
 
-  // Position covariance (x, y, z in ENU frame)
+  // Position covariance for your custom coordinate frame
+  // Your mapping: x=north, y=-east, z=-down
+  // PX4 uncertainty sources: x(north), y(east), z(down) via eph/epv
   if (position.xy_valid) {
-    // Use PX4's horizontal position error estimate (eph) if available
+    // Use PX4's horizontal position error estimate (eph) for both directions
     double xy_var = (position.eph > 0.0f) ? static_cast<double>(position.eph * position.eph) : 0.01; // 10cm default
-    covariance[0] = xy_var;  // x variance
-    covariance[7] = xy_var;  // y variance
+    covariance[0] = xy_var;  // x variance (north direction, same as PX4)
+    covariance[7] = xy_var;  // y variance (-east direction, same magnitude as PX4)
   } else {
     // High uncertainty for invalid XY position
     covariance[0] = 1000.0;  // 1000 m² variance (very uncertain)

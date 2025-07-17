@@ -163,12 +163,12 @@ private:
     // Copy pose with covariance
     odom_msg.pose = pose_msg.pose;
     
-    // Convert velocity from PX4 local position (NED) to ROS (ENU)
+    // Convert velocity from PX4 local position (NED) to your custom coordinate frame
     // PX4: vx=north, vy=east, vz=down
-    // ROS: x=east, y=north, z=up
-    odom_msg.twist.twist.linear.x = latest_position_.vx;   // east
-    odom_msg.twist.twist.linear.y = - latest_position_.vy;   // north  
-    odom_msg.twist.twist.linear.z = -latest_position_.vz;  // up (negate down)
+    // Your mapping: x=north, y=-east, z=-down (up)
+    odom_msg.twist.twist.linear.x = latest_position_.vx;   // north (pos_ned[0])
+    odom_msg.twist.twist.linear.y = -latest_position_.vy;   // -east (-pos_ned[1])  
+    odom_msg.twist.twist.linear.z = -latest_position_.vz;  // -down (up)
     
     // Angular velocity - need to convert from body frame (FRD) to ENU
     // For now, we don't have direct angular velocity from PX4 VehicleLocalPosition
@@ -188,15 +188,23 @@ private:
     }
     
     // Velocity covariance matrix (6x6, row-major)
-    // [vx_var,   0,      0,      0,      0,      0    ]
-    // [0,      vy_var,   0,      0,      0,      0    ]
-    // [0,        0,    vz_var,   0,      0,      0    ]
+    // Your coordinate system: x=north, y=-east, z=-down
+    // PX4 covariance sources: vx(north), vy(east), vz(down)
+    // [vx_var,   0,      0,      0,      0,      0    ]  // x=north
+    // [0,      vy_var,   0,      0,      0,      0    ]  // y=-east  
+    // [0,        0,    vz_var,   0,      0,      0    ]  // z=-down
     // [0,        0,      0,    wx_var,   0,      0    ]
     // [0,        0,      0,      0,    wy_var,   0    ]
     // [0,        0,      0,      0,      0,    wz_var ]
-    odom_msg.twist.covariance[0] = vel_variance;   // vx
-    odom_msg.twist.covariance[7] = vel_variance;   // vy
-    odom_msg.twist.covariance[14] = latest_position_.v_z_valid ? vel_variance : 1.0;  // vz
+    
+    // Map PX4 velocity uncertainties to your coordinate frame
+    double vx_variance = vel_variance;  // north direction (same as PX4 vx)
+    double vy_variance = vel_variance;  // -east direction (same magnitude as PX4 vy)
+    double vz_variance = latest_position_.v_z_valid ? vel_variance : 1.0;  // -down direction
+    
+    odom_msg.twist.covariance[0] = vx_variance;   // x (north)
+    odom_msg.twist.covariance[7] = vy_variance;   // y (-east)
+    odom_msg.twist.covariance[14] = vz_variance;  // z (-down)
     odom_msg.twist.covariance[21] = 0.1;  // wx (angular velocity - unknown)
     odom_msg.twist.covariance[28] = 0.1;  // wy
     odom_msg.twist.covariance[35] = 0.1;  // wz
