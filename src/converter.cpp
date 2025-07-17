@@ -38,29 +38,30 @@ void PoseConverter::ned_to_enu_quaternion(
   geometry_msgs::msg::Quaternion & q_enu)
 {
   // PX4 quaternion: [w, x, y, z] (Hamilton convention)
-  // NED to ENU conversion for quaternion
+  // Direct quaternion mapping to maintain device orientation aligned with map
+  // If device X+ should align with map X+, use quaternion as-is or with minimal rotation
+  
   const float q_w = q_ned[0];
   const float q_x = q_ned[1];
   const float q_y = q_ned[2];
   const float q_z = q_ned[3];
 
-  // Apply NED → ENU transformation
-  const float sqrt_2_inv = 1.0f / std::sqrt(2.0f);
-  
-  q_enu.w = (q_w + q_z) * sqrt_2_inv;
-  q_enu.x = (q_x + q_y) * sqrt_2_inv;
-  q_enu.y = (q_x - q_y) * sqrt_2_inv;
-  q_enu.z = (q_w - q_z) * sqrt_2_inv;
+  // Direct mapping - device frame aligned with map frame
+  q_enu.w = q_w;
+  q_enu.x = q_x;
+  q_enu.y = q_y;
+  q_enu.z = q_z;
 }
 
 void PoseConverter::ned_to_enu_position(
   const float pos_ned[3], 
   geometry_msgs::msg::Point & pos_enu)
 {
-  // NED to ENU position transformation: (x,y,z)_ENU = (y,x,-z)_NED
-  pos_enu.x = pos_ned[1];  // East (NED y) → East (ENU x)
-  pos_enu.y = pos_ned[0];  // North (NED x) → North (ENU y)  
-  pos_enu.z = -pos_ned[2]; // Down (NED z) → Up (ENU z)
+  // Direct position mapping to maintain X+ device aligned to X+ map
+  // If PX4 local position is already in the desired frame orientation
+  pos_enu.x = pos_ned[0];  // Forward (device X+) → Forward (map X+)
+  pos_enu.y = pos_ned[1];  // Left (device Y+) → Left (map Y+)  
+  pos_enu.z = -pos_ned[2]; // Up (device Z+) → Up (map Z+, negate down)
 }
 
 builtin_interfaces::msg::Time PoseConverter::convert_timestamp(uint64_t px4_timestamp_us)
