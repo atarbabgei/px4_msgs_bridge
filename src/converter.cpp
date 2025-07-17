@@ -129,4 +129,96 @@ void PoseConverter::set_pose_covariance(
   }
 }
 
+// IMU Converter Implementation
+sensor_msgs::msg::Imu ImuConverter::convert_vehicle_imu(
+  const px4_msgs::msg::VehicleAttitude & attitude,
+  const px4_msgs::msg::SensorCombined & sensors,
+  const std::string & frame_id)
+{
+  sensor_msgs::msg::Imu imu_msg;
+  
+  // Set frame and timestamp
+  imu_msg.header.frame_id = frame_id;
+  uint64_t timestamp_us = (sensors.timestamp != 0) ? sensors.timestamp : attitude.timestamp;
+  imu_msg.header.stamp = PoseConverter::convert_timestamp(timestamp_us);
+  
+  // Convert orientation (reuse existing quaternion conversion)
+  PoseConverter::ned_to_enu_quaternion(attitude.q.data(), imu_msg.orientation);
+  
+  // Convert angular velocity from NED to custom frame
+  ned_to_custom_angular_velocity(sensors.gyro_rad.data(), imu_msg.angular_velocity);
+  
+  // Convert linear acceleration from NED to custom frame  
+  ned_to_custom_linear_acceleration(sensors.accelerometer_m_s2.data(), imu_msg.linear_acceleration);
+  
+  // Set covariance matrices
+  set_imu_covariance(sensors, imu_msg.orientation_covariance, 
+                     imu_msg.angular_velocity_covariance, 
+                     imu_msg.linear_acceleration_covariance);
+  
+  return imu_msg;
+}
+
+void ImuConverter::ned_to_custom_angular_velocity(
+  const float gyro_ned[3], 
+  geometry_msgs::msg::Vector3 & gyro_custom)
+{
+  // Apply same coordinate transformation as position
+  // PX4 NED: X-North, Y-East, Z-Down
+  // Your custom frame: X-North, Y=-East, Z=-Down (up)
+  gyro_custom.x = gyro_ned[0];   // NED X (North) → Your X (North)
+  gyro_custom.y = -gyro_ned[1];  // NED Y (East) → Your Y (-East), negate
+  gyro_custom.z = -gyro_ned[2];  // NED Z (Down) → Your Z (-Down = Up), negate
+}
+
+void ImuConverter::ned_to_custom_linear_acceleration(
+  const float accel_ned[3], 
+  geometry_msgs::msg::Vector3 & accel_custom)
+{
+  // Apply same coordinate transformation as position  
+  // PX4 NED: X-North, Y-East, Z-Down
+  // Your custom frame: X-North, Y=-East, Z=-Down (up)
+  accel_custom.x = accel_ned[0];   // NED X (North) → Your X (North)
+  accel_custom.y = -accel_ned[1];  // NED Y (East) → Your Y (-East), negate  
+  accel_custom.z = -accel_ned[2];  // NED Z (Down) → Your Z (-Down = Up), negate
+}
+
+void ImuConverter::set_imu_covariance(
+  const px4_msgs::msg::SensorCombined & sensors,
+  std::array<double, 9> & orientation_cov,
+  std::array<double, 9> & angular_velocity_cov,
+  std::array<double, 9> & linear_acceleration_cov)
+{
+  // Initialize all covariance matrices to zero
+  orientation_cov.fill(0.0);
+  angular_velocity_cov.fill(0.0);
+  linear_acceleration_cov.fill(0.0);
+  
+  // Orientation covariance (3x3, row-major)
+  // Use reasonable defaults since PX4 attitude is filtered
+  orientation_cov[0] = 0.1;  // roll variance (~18°)
+  orientation_cov[4] = 0.1;  // pitch variance (~18°)
+  orientation_cov[8] = 0.2;  // yaw variance (~26°)
+  
+  // Angular velocity covariance (3x3, row-major)
+  // Base variance depending on calibration quality
+  double gyro_var = (sensors.gyro_calibration_count > 0) ? 0.01 : 0.1;  // rad/s²
+  if (sensors.gyro_clipping > 0) {
+    gyro_var *= 10.0;  // Higher uncertainty if clipping detected
+  }
+  angular_velocity_cov[0] = gyro_var;  // x variance
+  angular_velocity_cov[4] = gyro_var;  // y variance  
+  angular_velocity_cov[8] = gyro_var;  // z variance
+  
+  // Linear acceleration covariance (3x3, row-major)
+  // Base variance depending on calibration quality
+  double accel_var = (sensors.accel_calibration_count > 0) ? 0.1 : 1.0;  // m/s²²
+  if (sensors.accelerometer_clipping > 0) {
+    accel_var *= 10.0;  // Higher uncertainty if clipping detected
+  }
+  linear_acceleration_cov[0] = accel_var;  // x variance
+  linear_acceleration_cov[4] = accel_var;  // y variance
+  linear_acceleration_cov[8] = accel_var;  // z variance
+}
+
 } // namespace px4_msgs_bridge

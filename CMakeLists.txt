@@ -12,6 +12,7 @@ find_package(px4_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 # Include directories
 include_directories(include)
@@ -27,6 +28,7 @@ ament_target_dependencies(converter
   geometry_msgs
   std_msgs
   nav_msgs
+  sensor_msgs
 )
 
 # Create bridge node executable
@@ -42,6 +44,7 @@ ament_target_dependencies(vehicle_pose_bridge
   geometry_msgs
   std_msgs
   nav_msgs
+  sensor_msgs
 )
 
 # Create VIO bridge node executable

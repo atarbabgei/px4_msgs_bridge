@@ -25,11 +25,18 @@ def generate_launch_description():
         description='Publish vehicle odometry (nav_msgs/Odometry) with pose and twist'
     )
     
+    publish_imu_arg = DeclareLaunchArgument(
+        'publish_imu',
+        default_value='true',
+        description='Publish vehicle IMU data (sensor_msgs/Imu) from attitude and sensor_combined'
+    )
+    
     return LaunchDescription([
         # Launch arguments
         unlimited_path_arg,
         max_path_size_arg,
         publish_odom_arg,
+        publish_imu_arg,
         
         # Vehicle pose bridge node - converts PX4 attitude/position to ROS pose
         Node(
@@ -41,6 +48,7 @@ def generate_launch_description():
                 'unlimited_path': LaunchConfiguration('unlimited_path'),
                 'max_path_size': LaunchConfiguration('max_path_size'),
                 'publish_odom': LaunchConfiguration('publish_odom'),
+                'publish_imu': LaunchConfiguration('publish_imu'),
             }],
             remappings=[
                 # Add any topic remappings if needed

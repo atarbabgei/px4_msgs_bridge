@@ -2,8 +2,10 @@
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <nav_msgs/msg/odometry.hpp>
+#include <sensor_msgs/msg/imu.hpp>
 #include <px4_msgs/msg/vehicle_attitude.hpp>
 #include <px4_msgs/msg/vehicle_local_position.hpp>
+#include <px4_msgs/msg/sensor_combined.hpp>
 #include "px4_msgs_bridge/converter.hpp"
 
 class VehiclePoseBridge : public rclcpp::Node
@@ -30,6 +32,14 @@ public:
         this->position_callback(msg);
       });
 
+    // Create subscription to PX4 sensor combined for IMU data
+    sensor_sub_ = this->create_subscription<px4_msgs::msg::SensorCombined>(
+      "/fmu/out/sensor_combined",
+      qos,
+      [this](const px4_msgs::msg::SensorCombined::SharedPtr msg) {
+        this->sensor_callback(msg);
+      });
+
     // Create publisher for converted pose
     pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
       "/vehicle/pose", 10);
@@ -42,6 +52,10 @@ public:
     odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>(
       "/vehicle/odom", 10);
 
+    // Create publisher for vehicle IMU
+    imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>(
+      "/vehicle/imu", 10);
+
     // Initialize path message
     vehicle_path_.header.frame_id = "odom";
     
@@ -49,17 +63,21 @@ public:
     this->declare_parameter("unlimited_path", false);
     this->declare_parameter("max_path_size", 1000);
     this->declare_parameter("publish_odom", true);
+    this->declare_parameter("publish_imu", true);
     
     // Get parameter values
     unlimited_path_ = this->get_parameter("unlimited_path").as_bool();
     trail_size_ = this->get_parameter("max_path_size").as_int();
     publish_odom_ = this->get_parameter("publish_odom").as_bool();
+    publish_imu_ = this->get_parameter("publish_imu").as_bool();
     
     RCLCPP_INFO(this->get_logger(), "Vehicle pose bridge node started");
     RCLCPP_INFO(this->get_logger(), "Path settings - Unlimited: %s, Max size: %zu", 
                 unlimited_path_ ? "true" : "false", trail_size_);
     RCLCPP_INFO(this->get_logger(), "Odometry publishing: %s", 
                 publish_odom_ ? "enabled" : "disabled");
+    RCLCPP_INFO(this->get_logger(), "IMU publishing: %s", 
+                publish_imu_ ? "enabled" : "disabled");
   }
 
 private:
@@ -79,6 +97,15 @@ private:
     
     // Try to publish immediately when we get new position data
     try_publish_pose();
+  }
+
+  void sensor_callback(const px4_msgs::msg::SensorCombined::SharedPtr msg)
+  {
+    latest_sensors_ = *msg;
+    sensors_received_ = true;
+    
+    // Try to publish IMU immediately when we get new sensor data
+    try_publish_imu();
   }
 
   void try_publish_pose()
@@ -212,26 +239,52 @@ private:
     return odom_msg;
   }
 
+  void try_publish_imu()
+  {
+    // Only publish when both attitude and sensor data have been received
+    if (!attitude_received_ || !sensors_received_) {
+      return;
+    }
+
+    // Don't publish if IMU publishing is disabled
+    if (!publish_imu_) {
+      return;
+    }
+
+    // Convert and publish IMU data
+    auto imu_msg = px4_msgs_bridge::ImuConverter::convert_vehicle_imu(
+      latest_attitude_, latest_sensors_, "odom");
+    imu_pub_->publish(imu_msg);
+
+    RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+      "Published vehicle IMU data");
+  }
+
   // Subscriptions
   rclcpp::Subscription<px4_msgs::msg::VehicleAttitude>::SharedPtr attitude_sub_;
   rclcpp::Subscription<px4_msgs::msg::VehicleLocalPosition>::SharedPtr position_sub_;
+  rclcpp::Subscription<px4_msgs::msg::SensorCombined>::SharedPtr sensor_sub_;
   
   // Publishers
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
   
   // State storage
   px4_msgs::msg::VehicleAttitude latest_attitude_;
   px4_msgs::msg::VehicleLocalPosition latest_position_;
+  px4_msgs::msg::SensorCombined latest_sensors_;
   bool attitude_received_{false};
   bool position_received_{false};
+  bool sensors_received_{false};
   
   // Path tracking
   nav_msgs::msg::Path vehicle_path_;
   size_t trail_size_;
   bool unlimited_path_;
   bool publish_odom_;
+  bool publish_imu_;
 };
 
 int main(int argc, char ** argv)
