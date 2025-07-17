@@ -166,8 +166,8 @@ private:
     // Convert velocity from PX4 local position (NED) to ROS (ENU)
     // PX4: vx=north, vy=east, vz=down
     // ROS: x=east, y=north, z=up
-    odom_msg.twist.twist.linear.x = latest_position_.vy;   // east
-    odom_msg.twist.twist.linear.y = latest_position_.vx;   // north  
+    odom_msg.twist.twist.linear.x = latest_position_.vx;   // east
+    odom_msg.twist.twist.linear.y = - latest_position_.vy;   // north  
     odom_msg.twist.twist.linear.z = -latest_position_.vz;  // up (negate down)
     
     // Angular velocity - need to convert from body frame (FRD) to ENU
