@@ -32,11 +32,6 @@ public:
     pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
       "/vehicle/pose", 10);
 
-    // Create timer for periodic publishing (20 Hz)
-    timer_ = this->create_wall_timer(
-      std::chrono::milliseconds(50),
-      [this]() { this->publish_pose(); });
-
     RCLCPP_INFO(this->get_logger(), "Vehicle pose bridge node started");
   }
 
@@ -45,26 +40,53 @@ private:
   {
     latest_attitude_ = *msg;
     attitude_received_ = true;
+    
+    // Try to publish immediately when we get new attitude data
+    try_publish_pose();
   }
 
   void position_callback(const px4_msgs::msg::VehicleLocalPosition::SharedPtr msg)
   {
     latest_position_ = *msg;
     position_received_ = true;
+    
+    // Try to publish immediately when we get new position data
+    try_publish_pose();
   }
 
-  void publish_pose()
+  void try_publish_pose()
   {
     // Only publish when both attitude and position have been received
     if (!attitude_received_ || !position_received_) {
       return;
     }
 
+    // Check if the messages are reasonably synchronized (within 50ms)
+    uint64_t attitude_time = (latest_attitude_.timestamp_sample != 0) ? 
+                            latest_attitude_.timestamp_sample : latest_attitude_.timestamp;
+    uint64_t position_time = (latest_position_.timestamp_sample != 0) ? 
+                            latest_position_.timestamp_sample : latest_position_.timestamp;
+    
+    // Calculate time difference in microseconds
+    uint64_t time_diff = (attitude_time > position_time) ? 
+                        (attitude_time - position_time) : (position_time - attitude_time);
+    
+    // Only publish if messages are synchronized within 50ms (50000 microseconds)
+    if (time_diff > 50000) {
+      RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+        "Attitude and position timestamps differ by %lu us, skipping publish", time_diff);
+      return;
+    }
+
     // Convert and publish pose with appropriate covariance based on validity flags
+    // Use "odom" frame for odometry-based position estimate (PX4 local position)
     auto pose_with_cov = px4_msgs_bridge::PoseConverter::convert_vehicle_pose_with_covariance(
-      latest_attitude_, latest_position_, "map");
+      latest_attitude_, latest_position_, "odom");
     
     pose_pub_->publish(pose_with_cov);
+    
+    RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+      "Published vehicle pose with time diff: %lu us", time_diff);
   }
 
   // Subscriptions
@@ -73,9 +95,6 @@ private:
   
   // Publisher
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
-  
-  // Timer
-  rclcpp::TimerBase::SharedPtr timer_;
   
   // State storage
   px4_msgs::msg::VehicleAttitude latest_attitude_;
