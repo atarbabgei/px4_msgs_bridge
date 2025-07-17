@@ -61,9 +61,9 @@ void PoseConverter::ned_to_enu_position(
   // Convert from NED to ENU coordinate frame
   // NED: X-North, Y-East, Z-Down
   // ENU: X-East, Y-North, Z-Up
-  // Swap X and Y to fix the position mapping
-  pos_enu.x = pos_ned[0];   // NED X (North) → ENU X (North, but mapped to device X)
-  pos_enu.y = pos_ned[1];   // NED Y (East) → ENU Y (East, but mapped to device Y)
+  // Apply consistent mapping: East→X, North→Y, Up→Z
+  pos_enu.x = pos_ned[0];   // NED Y (East) → ENU X (East)
+  pos_enu.y = -pos_ned[1];   // NED X (North) → ENU Y (North)  
   pos_enu.z = -pos_ned[2];  // NED Z (Down) → ENU Z (Up), negate
 }
 
