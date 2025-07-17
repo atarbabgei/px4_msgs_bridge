@@ -79,7 +79,6 @@ public:
     const px4_msgs::msg::SensorCombined & sensors,
     const std::string & frame_id = "odom");
 
-private:
   /**
    * @brief Convert PX4 NED angular velocity to custom coordinate frame
    * Formula: (x,y,z)_custom = (x,-y,-z)_NED
@@ -87,7 +86,8 @@ private:
   static void ned_to_custom_angular_velocity(
     const float gyro_ned[3], 
     geometry_msgs::msg::Vector3 & gyro_custom);
-    
+
+private:
   /**
    * @brief Convert PX4 NED linear acceleration to custom coordinate frame  
    * Formula: (x,y,z)_custom = (x,-y,-z)_NED

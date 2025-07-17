@@ -197,12 +197,22 @@ private:
     odom_msg.twist.twist.linear.y = -latest_position_.vy;   // -east (-pos_ned[1])  
     odom_msg.twist.twist.linear.z = -latest_position_.vz;  // -down (up)
     
-    // Angular velocity - need to convert from body frame (FRD) to ENU
-    // For now, we don't have direct angular velocity from PX4 VehicleLocalPosition
-    // Set to zero until we add VehicleAngularVelocity subscription
-    odom_msg.twist.twist.angular.x = 0.0;
-    odom_msg.twist.twist.angular.y = 0.0;
-    odom_msg.twist.twist.angular.z = 0.0;
+    // Convert angular velocity from PX4 sensor data (NED body frame) to custom coordinate frame
+    // Only set angular velocity if sensor data is available
+    if (sensors_received_) {
+      float gyro_ned[3] = {latest_sensors_.gyro_rad[0], latest_sensors_.gyro_rad[1], latest_sensors_.gyro_rad[2]};
+      geometry_msgs::msg::Vector3 gyro_custom;
+      px4_msgs_bridge::ImuConverter::ned_to_custom_angular_velocity(gyro_ned, gyro_custom);
+      
+      odom_msg.twist.twist.angular.x = gyro_custom.x;
+      odom_msg.twist.twist.angular.y = gyro_custom.y;
+      odom_msg.twist.twist.angular.z = gyro_custom.z;
+    } else {
+      // Fallback: set to zero if no sensor data available
+      odom_msg.twist.twist.angular.x = 0.0;
+      odom_msg.twist.twist.angular.y = 0.0;
+      odom_msg.twist.twist.angular.z = 0.0;
+    }
     
     // Set twist covariance matrix
     // Initialize with zeros
@@ -212,6 +222,16 @@ private:
     double vel_variance = 0.1;  // Default velocity variance (m/s)^2
     if (!latest_position_.v_xy_valid) {
       vel_variance = 1.0;  // Higher uncertainty if velocity not valid
+    }
+    
+    // Angular velocity variance based on sensor availability and quality
+    double angular_vel_variance = 0.01;  // Default angular velocity variance (rad/s)^2
+    if (!sensors_received_) {
+      angular_vel_variance = 10.0;  // Very high uncertainty if no sensor data
+    } else {
+      // Use sensor quality indicators from PX4 if available
+      // For now, use a reasonable default for gyroscope uncertainty
+      angular_vel_variance = 0.05;  // Typical gyro uncertainty
     }
     
     // Velocity covariance matrix (6x6, row-major)
@@ -232,9 +252,9 @@ private:
     odom_msg.twist.covariance[0] = vx_variance;   // x (north)
     odom_msg.twist.covariance[7] = vy_variance;   // y (-east)
     odom_msg.twist.covariance[14] = vz_variance;  // z (-down)
-    odom_msg.twist.covariance[21] = 0.1;  // wx (angular velocity - unknown)
-    odom_msg.twist.covariance[28] = 0.1;  // wy
-    odom_msg.twist.covariance[35] = 0.1;  // wz
+    odom_msg.twist.covariance[21] = angular_vel_variance;  // wx (angular velocity about x)
+    odom_msg.twist.covariance[28] = angular_vel_variance;  // wy (angular velocity about y)
+    odom_msg.twist.covariance[35] = angular_vel_variance;  // wz (angular velocity about z)
     
     return odom_msg;
   }
