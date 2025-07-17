@@ -221,4 +221,83 @@ void ImuConverter::set_imu_covariance(
   linear_acceleration_cov[8] = accel_var;  // z variance
 }
 
+// =====================================================
+// AccelConverter Implementation
+// =====================================================
+
+geometry_msgs::msg::AccelWithCovarianceStamped AccelConverter::convert_vehicle_acceleration(
+  const px4_msgs::msg::VehicleLocalPosition & position,
+  const std::string & frame_id)
+{
+  geometry_msgs::msg::AccelWithCovarianceStamped accel_msg;
+  
+  // Set header information
+  accel_msg.header.frame_id = frame_id;
+  
+  // Use timestamp_sample if available, otherwise use timestamp
+  uint64_t timestamp_us = (position.timestamp_sample != 0) ? 
+                         position.timestamp_sample : position.timestamp;
+  accel_msg.header.stamp = PoseConverter::convert_timestamp(timestamp_us);
+  
+  // Convert linear acceleration from PX4 NED to custom coordinate frame
+  // PX4: ax=north, ay=east, az=down
+  // Your mapping: x=north, y=-east, z=-down (up)
+  accel_msg.accel.accel.linear.x = position.ax;   // north (same as PX4 ax)
+  accel_msg.accel.accel.linear.y = -position.ay;  // -east (invert PX4 ay)
+  accel_msg.accel.accel.linear.z = -position.az;  // -down (up, invert PX4 az)
+  
+  // Angular acceleration - PX4 VehicleLocalPosition doesn't provide this
+  // Set to zero for now
+  accel_msg.accel.accel.angular.x = 0.0;
+  accel_msg.accel.accel.angular.y = 0.0;
+  accel_msg.accel.accel.angular.z = 0.0;
+  
+  // Set covariance matrix
+  set_accel_covariance(position, accel_msg.accel.covariance);
+  
+  return accel_msg;
+}
+
+void AccelConverter::set_accel_covariance(
+  const px4_msgs::msg::VehicleLocalPosition & position,
+  std::array<double, 36> & covariance)
+{
+  // Initialize all covariance elements to zero
+  std::fill(covariance.begin(), covariance.end(), 0.0);
+  
+  // Set linear acceleration covariance (first 3x3 block)
+  // Base variance depending on position validity flags
+  double accel_var = 0.1;  // Default acceleration variance (m/s²)²
+  
+  // Increase uncertainty if position is not valid (poor accelerometer calibration)
+  if (!position.xy_valid || !position.z_valid) {
+    accel_var = 1.0;  // Higher uncertainty if position estimates are poor
+  }
+  
+  // Dead reckoning mode typically means degraded sensor performance
+  if (position.dead_reckoning) {
+    accel_var *= 5.0;  // Much higher uncertainty during dead reckoning
+  }
+  
+  // Acceleration covariance matrix (6x6, row-major)
+  // Your coordinate system: x=north, y=-east, z=-down
+  // [ax_var,    0,      0,      0,      0,      0    ]  // x=north
+  // [0,      ay_var,    0,      0,      0,      0    ]  // y=-east  
+  // [0,        0,    az_var,    0,      0,      0    ]  // z=-down
+  // [0,        0,      0,    αx_var,    0,      0    ]  // angular acceleration (unknown)
+  // [0,        0,      0,      0,    αy_var,    0    ]
+  // [0,        0,      0,      0,      0,    αz_var ]
+  
+  covariance[0] = accel_var;   // ax variance (north)
+  covariance[7] = accel_var;   // ay variance (-east)
+  covariance[14] = accel_var;  // az variance (-down)
+  
+  // Angular acceleration covariance (unknown/not provided by PX4)
+  // Set to high uncertainty since we don't have this data
+  double angular_accel_var = 10.0;  // High uncertainty for unknown angular acceleration
+  covariance[21] = angular_accel_var;  // αx variance
+  covariance[28] = angular_accel_var;  // αy variance  
+  covariance[35] = angular_accel_var;  // αz variance
+}
+
 } // namespace px4_msgs_bridge

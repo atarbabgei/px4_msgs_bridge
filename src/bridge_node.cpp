@@ -1,5 +1,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+#include <geometry_msgs/msg/accel_with_covariance_stamped.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <sensor_msgs/msg/imu.hpp>
@@ -56,6 +57,10 @@ public:
     imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>(
       "/vehicle/imu", 10);
 
+    // Create publisher for vehicle acceleration
+    accel_pub_ = this->create_publisher<geometry_msgs::msg::AccelWithCovarianceStamped>(
+      "/vehicle/acceleration", 10);
+
     // Initialize path message
     vehicle_path_.header.frame_id = "odom";
     
@@ -64,12 +69,14 @@ public:
     this->declare_parameter("max_path_size", 1000);
     this->declare_parameter("publish_odom", true);
     this->declare_parameter("publish_imu", true);
+    this->declare_parameter("publish_accel", true);
     
     // Get parameter values
     unlimited_path_ = this->get_parameter("unlimited_path").as_bool();
     trail_size_ = this->get_parameter("max_path_size").as_int();
     publish_odom_ = this->get_parameter("publish_odom").as_bool();
     publish_imu_ = this->get_parameter("publish_imu").as_bool();
+    publish_accel_ = this->get_parameter("publish_accel").as_bool();
     
     RCLCPP_INFO(this->get_logger(), "Vehicle pose bridge node started");
     RCLCPP_INFO(this->get_logger(), "Path settings - Unlimited: %s, Max size: %zu", 
@@ -78,6 +85,8 @@ public:
                 publish_odom_ ? "enabled" : "disabled");
     RCLCPP_INFO(this->get_logger(), "IMU publishing: %s", 
                 publish_imu_ ? "enabled" : "disabled");
+    RCLCPP_INFO(this->get_logger(), "Acceleration publishing: %s", 
+                publish_accel_ ? "enabled" : "disabled");
   }
 
 private:
@@ -145,11 +154,18 @@ private:
       odom_pub_->publish(odometry_msg);
     }
     
+    // Convert and publish vehicle acceleration if enabled
+    if (publish_accel_) {
+      auto accel_msg = px4_msgs_bridge::AccelConverter::convert_vehicle_acceleration(
+        latest_position_, "odom");
+      accel_pub_->publish(accel_msg);
+    }
+    
     // Update and publish vehicle path
     update_vehicle_path(pose_with_cov);
     
     RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-      "Published vehicle pose and odometry with time diff: %lu us", time_diff);
+      "Published vehicle pose, odometry, and acceleration with time diff: %lu us", time_diff);
   }
 
   void update_vehicle_path(const geometry_msgs::msg::PoseWithCovarianceStamped& pose_msg)
@@ -290,6 +306,7 @@ private:
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::AccelWithCovarianceStamped>::SharedPtr accel_pub_;
   
   // State storage
   px4_msgs::msg::VehicleAttitude latest_attitude_;
@@ -305,6 +322,7 @@ private:
   bool unlimited_path_;
   bool publish_odom_;
   bool publish_imu_;
+  bool publish_accel_;
 };
 
 int main(int argc, char ** argv)

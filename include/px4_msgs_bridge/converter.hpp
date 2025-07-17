@@ -2,6 +2,7 @@
 #define PX4_MSGS_BRIDGE__CONVERTER_HPP_
 
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+#include <geometry_msgs/msg/accel_with_covariance_stamped.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <px4_msgs/msg/vehicle_attitude.hpp>
 #include <px4_msgs/msg/vehicle_local_position.hpp>
@@ -108,6 +109,34 @@ private:
     std::array<double, 9> & orientation_cov,
     std::array<double, 9> & angular_velocity_cov,
     std::array<double, 9> & linear_acceleration_cov);
+};
+
+/**
+ * @brief Converter for PX4 acceleration data to ROS 2 geometry_msgs::AccelWithCovarianceStamped
+ * Uses linear acceleration from VehicleLocalPosition (ax, ay, az)
+ */
+class AccelConverter
+{
+public:
+  /**
+   * @brief Convert PX4 local position acceleration to ROS 2 AccelWithCovarianceStamped
+   * @param position PX4 vehicle local position message (contains ax, ay, az)
+   * @param frame_id Target frame ID for the acceleration message
+   * @return geometry_msgs::AccelWithCovarianceStamped in your custom coordinate frame with covariance
+   */
+  static geometry_msgs::msg::AccelWithCovarianceStamped convert_vehicle_acceleration(
+    const px4_msgs::msg::VehicleLocalPosition & position,
+    const std::string & frame_id = "odom");
+
+private:
+  /**
+   * @brief Set acceleration covariance matrix based on PX4 validity flags and uncertainty estimates
+   * @param position PX4 vehicle local position message with validity flags
+   * @param covariance Output 6x6 covariance matrix (36 elements, row-major)
+   */
+  static void set_accel_covariance(
+    const px4_msgs::msg::VehicleLocalPosition & position,
+    std::array<double, 36> & covariance);
 };
 
 } // namespace px4_msgs_bridge

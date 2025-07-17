@@ -31,12 +31,19 @@ def generate_launch_description():
         description='Publish vehicle IMU data (sensor_msgs/Imu) from attitude and sensor_combined'
     )
     
+    publish_accel_arg = DeclareLaunchArgument(
+        'publish_accel',
+        default_value='true',
+        description='Publish vehicle acceleration (geometry_msgs/AccelWithCovarianceStamped) from vehicle_local_position ax/ay/az'
+    )
+    
     return LaunchDescription([
         # Launch arguments
         unlimited_path_arg,
         max_path_size_arg,
         publish_odom_arg,
         publish_imu_arg,
+        publish_accel_arg,
         
         # Vehicle pose bridge node - converts PX4 attitude/position to ROS pose
         Node(
@@ -49,6 +56,7 @@ def generate_launch_description():
                 'max_path_size': LaunchConfiguration('max_path_size'),
                 'publish_odom': LaunchConfiguration('publish_odom'),
                 'publish_imu': LaunchConfiguration('publish_imu'),
+                'publish_accel': LaunchConfiguration('publish_accel'),
             }],
             remappings=[
                 # Add any topic remappings if needed
