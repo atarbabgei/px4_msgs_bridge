@@ -246,8 +246,8 @@ geometry_msgs::msg::AccelWithCovarianceStamped AccelConverter::convert_vehicle_a
   accel_msg.accel.accel.linear.y = -position.ay;  // -east (invert PX4 ay)
   accel_msg.accel.accel.linear.z = -position.az;  // -down (up, invert PX4 az)
   
-  // Angular acceleration - PX4 VehicleLocalPosition doesn't provide this
-  // Set to zero for now
+  // Angular acceleration - PX4 doesn't provide this data directly
+  // Set to zero as per your requirement (no calculations in this bridge package)
   accel_msg.accel.accel.angular.x = 0.0;
   accel_msg.accel.accel.angular.y = 0.0;
   accel_msg.accel.accel.angular.z = 0.0;
@@ -284,7 +284,7 @@ void AccelConverter::set_accel_covariance(
   // [ax_var,    0,      0,      0,      0,      0    ]  // x=north
   // [0,      ay_var,    0,      0,      0,      0    ]  // y=-east  
   // [0,        0,    az_var,    0,      0,      0    ]  // z=-down
-  // [0,        0,      0,    αx_var,    0,      0    ]  // angular acceleration (unknown)
+  // [0,        0,      0,    αx_var,    0,      0    ]  // angular acceleration (not provided by PX4)
   // [0,        0,      0,      0,    αy_var,    0    ]
   // [0,        0,      0,      0,      0,    αz_var ]
   
@@ -292,9 +292,8 @@ void AccelConverter::set_accel_covariance(
   covariance[7] = accel_var;   // ay variance (-east)
   covariance[14] = accel_var;  // az variance (-down)
   
-  // Angular acceleration covariance (unknown/not provided by PX4)
-  // Set to high uncertainty since we don't have this data
-  double angular_accel_var = 10.0;  // High uncertainty for unknown angular acceleration
+  // Angular acceleration covariance (not provided by PX4, set to high uncertainty)
+  double angular_accel_var = 1000.0;  // Very high uncertainty for unknown angular acceleration
   covariance[21] = angular_accel_var;  // αx variance
   covariance[28] = angular_accel_var;  // αy variance  
   covariance[35] = angular_accel_var;  // αz variance

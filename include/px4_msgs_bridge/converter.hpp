@@ -114,12 +114,13 @@ private:
 /**
  * @brief Converter for PX4 acceleration data to ROS 2 geometry_msgs::AccelWithCovarianceStamped
  * Uses linear acceleration from VehicleLocalPosition (ax, ay, az)
+ * Angular acceleration is set to zero since PX4 doesn't provide this data directly
  */
 class AccelConverter
 {
 public:
   /**
-   * @brief Convert PX4 local position acceleration to ROS 2 AccelWithCovarianceStamped
+   * @brief Convert PX4 acceleration data to ROS 2 AccelWithCovarianceStamped
    * @param position PX4 vehicle local position message (contains ax, ay, az)
    * @param frame_id Target frame ID for the acceleration message
    * @return geometry_msgs::AccelWithCovarianceStamped in your custom coordinate frame with covariance
