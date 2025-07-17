@@ -51,18 +51,18 @@ private:
     // Position and orientation frame: FRD (Front-Right-Down)
     px4_msg.pose_frame = px4_msgs::msg::VehicleOdometry::POSE_FRAME_FRD;
     
-    // Direct position mapping to maintain VIO X+ aligned to PX4 X+
-    // No frame rotation - preserve the VIO coordinate system orientation
-    px4_msg.position[0] = static_cast<float>(msg->pose.pose.position.x);   // Forward (VIO X+) → Forward (PX4 X+)
-    px4_msg.position[1] = static_cast<float>(msg->pose.pose.position.y);   // Left (VIO Y+) → Left (PX4 Y+)
-    px4_msg.position[2] = static_cast<float>(-msg->pose.pose.position.z);  // Up (VIO Z+) → Down (PX4 Z-)
+    // Position mapping based on working MoCap transformation
+    // Keep X aligned, negate Y and Z to match PX4 FRD frame
+    px4_msg.position[0] = static_cast<float>(msg->pose.pose.position.x);    // Forward (VIO X+) → Forward (PX4 X+)
+    px4_msg.position[1] = static_cast<float>(-msg->pose.pose.position.y);   // Left (VIO Y+) → Right (PX4 Y+), negate
+    px4_msg.position[2] = static_cast<float>(-msg->pose.pose.position.z);   // Up (VIO Z+) → Down (PX4 Z+), negate
 
-    // Direct quaternion mapping to maintain VIO orientation aligned with PX4
-    // No frame rotation - preserve the VIO orientation
+    // Quaternion mapping based on working MoCap transformation  
+    // Keep w and x as-is, negate y and z components
     px4_msg.q[0] = static_cast<float>(msg->pose.pose.orientation.w);   // w (same)
-    px4_msg.q[1] = static_cast<float>(msg->pose.pose.orientation.x);   // x (same)
-    px4_msg.q[2] = static_cast<float>(msg->pose.pose.orientation.y);   // y (same)
-    px4_msg.q[3] = static_cast<float>(-msg->pose.pose.orientation.z);  // z (negate for Z-axis flip)
+    px4_msg.q[1] = static_cast<float>(msg->pose.pose.orientation.x);   // x (same, roll)
+    px4_msg.q[2] = static_cast<float>(-msg->pose.pose.orientation.y);  // y (negate, pitch)
+    px4_msg.q[3] = static_cast<float>(-msg->pose.pose.orientation.z);  // z (negate, yaw)
 
     // Velocity frame: FRD
     px4_msg.velocity_frame = px4_msgs::msg::VehicleOdometry::VELOCITY_FRAME_FRD;
