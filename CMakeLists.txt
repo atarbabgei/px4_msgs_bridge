@@ -26,6 +26,7 @@ ament_target_dependencies(converter
   px4_msgs
   geometry_msgs
   std_msgs
+  nav_msgs
 )
 
 # Create bridge node executable
@@ -40,6 +41,7 @@ ament_target_dependencies(vehicle_pose_bridge
   px4_msgs
   geometry_msgs
   std_msgs
+  nav_msgs
 )
 
 # Create VIO bridge node executable

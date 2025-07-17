@@ -1,5 +1,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+#include <nav_msgs/msg/path.hpp>
 #include <px4_msgs/msg/vehicle_attitude.hpp>
 #include <px4_msgs/msg/vehicle_local_position.hpp>
 #include "px4_msgs_bridge/converter.hpp"
@@ -31,6 +32,14 @@ public:
     // Create publisher for converted pose
     pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
       "/vehicle/pose", 10);
+
+    // Create publisher for vehicle path
+    path_pub_ = this->create_publisher<nav_msgs::msg::Path>(
+      "/vehicle/path", 10);
+
+    // Initialize path message
+    vehicle_path_.header.frame_id = "odom";
+    trail_size_ = 1000;  // Maximum number of poses in the path
 
     RCLCPP_INFO(this->get_logger(), "Vehicle pose bridge node started");
   }
@@ -85,22 +94,52 @@ private:
     
     pose_pub_->publish(pose_with_cov);
     
+    // Update and publish vehicle path
+    update_vehicle_path(pose_with_cov);
+    
     RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
       "Published vehicle pose with time diff: %lu us", time_diff);
+  }
+
+  void update_vehicle_path(const geometry_msgs::msg::PoseWithCovarianceStamped& pose_msg)
+  {
+    // Convert PoseWithCovarianceStamped to PoseStamped for the path
+    geometry_msgs::msg::PoseStamped path_pose;
+    path_pose.header = pose_msg.header;
+    path_pose.pose = pose_msg.pose.pose;  // Extract the pose from PoseWithCovariance
+    
+    // Add the new pose to the path
+    vehicle_path_.poses.push_back(path_pose);
+    
+    // Maintain trail size by removing old poses
+    if (vehicle_path_.poses.size() > trail_size_) {
+      vehicle_path_.poses.erase(vehicle_path_.poses.begin());
+    }
+    
+    // Update path header with current timestamp
+    vehicle_path_.header.stamp = pose_msg.header.stamp;
+    
+    // Publish the path
+    path_pub_->publish(vehicle_path_);
   }
 
   // Subscriptions
   rclcpp::Subscription<px4_msgs::msg::VehicleAttitude>::SharedPtr attitude_sub_;
   rclcpp::Subscription<px4_msgs::msg::VehicleLocalPosition>::SharedPtr position_sub_;
   
-  // Publisher
+  // Publishers
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
+  rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
   
   // State storage
   px4_msgs::msg::VehicleAttitude latest_attitude_;
   px4_msgs::msg::VehicleLocalPosition latest_position_;
   bool attitude_received_{false};
   bool position_received_{false};
+  
+  // Path tracking
+  nav_msgs::msg::Path vehicle_path_;
+  size_t trail_size_;
 };
 
 int main(int argc, char ** argv)
