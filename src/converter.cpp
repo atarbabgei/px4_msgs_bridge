@@ -47,12 +47,11 @@ void PoseConverter::ned_to_enu_quaternion(
   const float q_y = q_ned[2];
   const float q_z = q_ned[3];
 
-  // NED to ENU quaternion transformation
-  // This is the standard transformation from NED to ENU
+  // Corrected quaternion transformation to fix pitch direction
   q_enu.w = q_w;
-  q_enu.x = q_y;   // NED Y (East) → ENU X (East)
-  q_enu.y = q_x;   // NED X (North) → ENU Y (North)
-  q_enu.z = -q_z;  // NED Z (Down) → ENU Z (Up), negate
+  q_enu.x = q_x;    // NED X → ENU X (roll)
+  q_enu.y = -q_y;   // NED Y → ENU Y (pitch), negate to fix nose up/down direction
+  q_enu.z = -q_z;   // NED Z (Down) → ENU Z (Up), negate for yaw
 }
 
 void PoseConverter::ned_to_enu_position(
@@ -62,8 +61,9 @@ void PoseConverter::ned_to_enu_position(
   // Convert from NED to ENU coordinate frame
   // NED: X-North, Y-East, Z-Down
   // ENU: X-East, Y-North, Z-Up
-  pos_enu.x = pos_ned[1];   // NED Y (East) → ENU X (East)
-  pos_enu.y = pos_ned[0];   // NED X (North) → ENU Y (North)
+  // Swap X and Y to fix the position mapping
+  pos_enu.x = pos_ned[0];   // NED X (North) → ENU X (North, but mapped to device X)
+  pos_enu.y = pos_ned[1];   // NED Y (East) → ENU Y (East, but mapped to device Y)
   pos_enu.z = -pos_ned[2];  // NED Z (Down) → ENU Z (Up), negate
 }
 
