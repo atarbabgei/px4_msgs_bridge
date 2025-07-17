@@ -39,9 +39,18 @@ public:
 
     // Initialize path message
     vehicle_path_.header.frame_id = "odom";
-    trail_size_ = 1000;  // Maximum number of poses in the path
-
+    
+    // Declare parameters
+    this->declare_parameter("unlimited_path", false);
+    this->declare_parameter("max_path_size", 1000);
+    
+    // Get parameter values
+    unlimited_path_ = this->get_parameter("unlimited_path").as_bool();
+    trail_size_ = this->get_parameter("max_path_size").as_int();
+    
     RCLCPP_INFO(this->get_logger(), "Vehicle pose bridge node started");
+    RCLCPP_INFO(this->get_logger(), "Path settings - Unlimited: %s, Max size: %zu", 
+                unlimited_path_ ? "true" : "false", trail_size_);
   }
 
 private:
@@ -111,8 +120,8 @@ private:
     // Add the new pose to the path
     vehicle_path_.poses.push_back(path_pose);
     
-    // Maintain trail size by removing old poses
-    if (vehicle_path_.poses.size() > trail_size_) {
+    // Maintain trail size by removing old poses (only if not unlimited)
+    if (!unlimited_path_ && vehicle_path_.poses.size() > trail_size_) {
       vehicle_path_.poses.erase(vehicle_path_.poses.begin());
     }
     
@@ -121,6 +130,11 @@ private:
     
     // Publish the path
     path_pub_->publish(vehicle_path_);
+    
+    // Log path size occasionally for debugging
+    if (vehicle_path_.poses.size() % 100 == 0) {
+      RCLCPP_DEBUG(this->get_logger(), "Vehicle path contains %zu poses", vehicle_path_.poses.size());
+    }
   }
 
   // Subscriptions
@@ -140,6 +154,7 @@ private:
   // Path tracking
   nav_msgs::msg::Path vehicle_path_;
   size_t trail_size_;
+  bool unlimited_path_;
 };
 
 int main(int argc, char ** argv)
