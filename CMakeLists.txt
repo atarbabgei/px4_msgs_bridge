@@ -11,72 +11,77 @@ find_package(rclcpp REQUIRED)
 find_package(px4_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
 
-# Include directories
-include_directories(include)
-
-# Create converter library
-add_library(converter
-  src/converter.cpp
+# Create shared bridge library
+add_library(px4_bridge_lib
+  src/bridge_base.cpp
+  src/converter_base.cpp
+  src/bridge_manager.cpp
+  src/px4_to_ros_converter.cpp
+  src/ros_to_px4_converter.cpp
 )
 
-ament_target_dependencies(converter
+# Set include directories for the library
+target_include_directories(px4_bridge_lib
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+    $<INSTALL_INTERFACE:include>
+)
+
+ament_target_dependencies(px4_bridge_lib
   rclcpp
   px4_msgs
   geometry_msgs
   std_msgs
+  std_srvs
   nav_msgs
   sensor_msgs
+  tf2
+  tf2_ros
 )
 
-# Create bridge node executable
-add_executable(vehicle_pose_bridge
-  src/bridge_node.cpp
+# Create unified bridge node executable
+add_executable(bridge_node
+  src/main.cpp
 )
 
-target_link_libraries(vehicle_pose_bridge converter)
+target_link_libraries(bridge_node px4_bridge_lib)
 
-ament_target_dependencies(vehicle_pose_bridge
+ament_target_dependencies(bridge_node
   rclcpp
   px4_msgs
   geometry_msgs
   std_msgs
+  std_srvs
   nav_msgs
   sensor_msgs
-)
-
-# Create VIO bridge node executable
-add_executable(vio_bridge_node
-  src/vio_bridge_node.cpp
-)
-
-ament_target_dependencies(vio_bridge_node
-  rclcpp
-  px4_msgs
-  nav_msgs
+  tf2
+  tf2_ros
 )
 
 # Install targets
 install(TARGETS
-  vehicle_pose_bridge
-  vio_bridge_node
+  bridge_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
 install(TARGETS
-  converter
-  DESTINATION lib
-)
-
-install(DIRECTORY
-  include/
-  DESTINATION include
+  px4_bridge_lib
+  EXPORT ${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
 )
 
 install(DIRECTORY
   launch
+  config
+  rviz
   DESTINATION share/${PROJECT_NAME}
 )
 
