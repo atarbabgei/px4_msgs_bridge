@@ -157,10 +157,9 @@ void Px4ToRosConverter::attitude_callback(const px4_msgs::msg::VehicleAttitude::
     latest_attitude_ = *msg;
     attitude_received_ = true;
     
-    // Try to publish pose and IMU when attitude is updated
-    try_publish_pose();
+    // Only publish from attitude callback to avoid double publishing
+    try_publish_synchronized_pose_path_and_tf();
     try_publish_imu();
-    
     update_stats("attitude");
 }
 
@@ -169,9 +168,7 @@ void Px4ToRosConverter::position_callback(const px4_msgs::msg::VehicleLocalPosit
     latest_position_ = *msg;
     position_received_ = true;
     
-    // Try to publish pose when position is updated
-    try_publish_pose();
-    
+    // Don't publish from position callback - only update data
     update_stats("position");
 }
 
@@ -186,30 +183,30 @@ void Px4ToRosConverter::sensor_callback(const px4_msgs::msg::SensorCombined::Sha
     update_stats("sensor");
 }
 
-void Px4ToRosConverter::try_publish_pose()
+void Px4ToRosConverter::try_publish_synchronized_pose_path_and_tf()
 {
     // Need both attitude and position for pose
     if (!attitude_received_ || !position_received_) {
         return;
     }
     
-    // RATE LIMITING: Use ROS system time (not PX4 timestamps)
+    // RATE LIMITING: Use ROS system time for smooth, consistent publishing
     static auto last_publish_time = std::chrono::steady_clock::now();
     auto current_time = std::chrono::steady_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(current_time - last_publish_time);
     
-    // Relax rate limiting to handle timing jitter from PX4 (allow ~110Hz max for 100Hz target)
-    if (elapsed.count() < 9000) {  // 9ms = ~111Hz max, compensates for PX4 timing irregularities
+    // Target 100Hz (10ms intervals) to match PX4 source rate exactly
+    if (elapsed.count() < 10000) {  // 10ms = 100Hz exactly
         return;  // Skip - too soon since last publish
     }
     
     // UPDATE IMMEDIATELY after rate check passes
     last_publish_time = current_time;
     
-    // SYNCHRONIZED PUBLISHING: Use identical timestamp for pose, path, and TF
+    // SYNCHRONIZED PUBLISHING: Use identical ROS timestamp for pose, path, and TF
     auto synchronized_timestamp = rclcpp::Clock().now();
     
-    // Convert to pose message and override with synchronized timestamp
+    // Convert to pose message with synchronized timestamp
     auto pose_msg = convert_vehicle_pose_with_covariance();
     pose_msg.header.stamp = synchronized_timestamp;  // Ensure identical timestamp
     
