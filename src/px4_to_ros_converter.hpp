@@ -82,7 +82,6 @@ private:
     bool attitude_received_{false};
     bool position_received_{false};
     bool sensors_received_{false};
-    
     // === Callback Handlers ===
     
     /**
@@ -106,9 +105,10 @@ private:
     // === Conversion and Publishing ===
     
     /**
-     * @brief Attempt to publish pose when both attitude and position are available
+     * @brief Synchronously publish pose, path, and TF when both attitude and position are available
+     * This ensures all outputs use identical ROS timestamps for perfect synchronization
      */
-    void try_publish_pose();
+    void try_publish_synchronized_pose_path_and_tf();
     
     /**
      * @brief Attempt to publish IMU when both attitude and sensor data are available
@@ -126,7 +126,7 @@ private:
      * @return geometry_msgs::msg::PoseWithCovarianceStamped Complete pose message
      */
     geometry_msgs::msg::PoseWithCovarianceStamped convert_vehicle_pose_with_covariance();
-
+    
     /**
      * @brief Convert pose and velocity data to odometry message
      * @param pose_msg Input pose message
@@ -210,6 +210,7 @@ private:
     void publish_synchronized_tf(const builtin_interfaces::msg::Time& timestamp);
     void publish_odom_tf_with_timestamp(const builtin_interfaces::msg::Time& timestamp);
     void publish_map_tf_with_timestamp(const builtin_interfaces::msg::Time& timestamp);
+    
     
     // === Path Tracking ===
     
