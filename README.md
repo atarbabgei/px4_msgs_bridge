@@ -90,7 +90,7 @@ Or use custom YAML file:
 ros2 launch px4_msgs_bridge bridge.launch.py config_file:=/path/to/your/config.yaml
 ```
 
-**Option 2: Launch Arguments** (temporary overrides)
+**Option 2: Launch Arguments** (overrides)
 ```bash
 # With visualization
 ros2 launch px4_msgs_bridge bridge.launch.py visualizer:=true

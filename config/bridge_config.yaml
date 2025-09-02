@@ -4,20 +4,20 @@
 px4_bridge_manager:
   ros__parameters:
     # === Global Configuration ===
-    # Vehicle namespace for ROS topics (e.g., "vehicle", "uav1", "drone_alpha")
+    # Vehicle namespace for ROS topics
     vehicle_namespace: "vehicle"
      
     # === PX4 → ROS Converter Configuration ===
     px4_to_ros:
       # Publishing options
-      publish_pose: true
-      publish_path: true
-      publish_odometry: false
-      publish_imu: true
+      publish_pose: true        # shown as /{vehicle_namespace}/pose
+      publish_path: true        # shown as /{vehicle_namespace}/path
+      publish_odometry: false   # shown as /{vehicle_namespace}/odom
+      publish_imu: true     # shown as /{vehicle_namespace}/imu
       
-      # Path tracking configuration - OPTIMIZED FOR MINIMAL DELAY
+      # Path tracking configuration
       path_config:
-        max_path_size: 100       # Path size limit (0=disabled, inf=unlimited, >0=limited). Smaller = faster processing/serialization
+        max_path_size: 100       # Path size limit (0=disabled, inf=unlimited, >0=limited). 
       
       # Frame configuration
       output_frame_id: "odom"    # Frame ID for all output messages
@@ -34,15 +34,17 @@ px4_bridge_manager:
         odom_frame: "odom" 
         base_link_frame: "base_link"
         
-        # Publishing rates (Hz) - MATCH PX4 NATIVE RATE FOR MINIMAL DELAY
-        tf_rate: 100.0                     # Match PX4's 100Hz for zero rate-limiting delay
-        map_tf_rate: 100.0                 # Match for consistency
+        # Publishing rates (Hz)
+        tf_rate: 100.0                     
+        map_tf_rate: 100.0                 
     
     # === ROS → PX4 Converter Configuration ===
     ros_to_px4:
-      # External odometry input (e.g., from camera/LIDAR SLAM)
+      # External odometry input (e.g., from camera/LIDAR SLAM or Mocap)
+      # For know we just assume the external odom facing the same direction as the px4/fmu
+      # To Do: additional matrix conversion parameters for any other case
       external_odometry:
-        enable: true   # Set to true when you have external VIO/SLAM system
+        enable: false   # Set to true when you have external VIO/SLAM system
         input_topic: "/odom/sample"  # Common: /Odometry, /camera/odom/sample, /rtabmap/odom
         quality_threshold: 0.5       # Minimum odometry quality to accept
     
