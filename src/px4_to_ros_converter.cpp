@@ -105,8 +105,8 @@ void Px4ToRosConverter::load_configuration()
     node_->declare_parameter("px4_to_ros.output_frame_id", "odom");
     node_->declare_parameter("px4_to_ros.child_frame_id", "base_link");
     
-    // Synchronization parameters
-    node_->declare_parameter("px4_to_ros.sync_threshold_us", static_cast<int64_t>(config_.sync_threshold_us));
+    // Path configuration parameters
+    node_->declare_parameter("px4_to_ros.path_config.max_path_size", static_cast<int64_t>(config_.max_path_size));
     
     // Load configuration
     config_.publish_pose = node_->get_parameter("px4_to_ros.publish_pose").as_bool();
@@ -117,8 +117,8 @@ void Px4ToRosConverter::load_configuration()
     config_.output_frame_id = node_->get_parameter("px4_to_ros.output_frame_id").as_string();
     config_.child_frame_id = node_->get_parameter("px4_to_ros.child_frame_id").as_string();
     
-    // Load synchronization parameters
-    config_.sync_threshold_us = node_->get_parameter("px4_to_ros.sync_threshold_us").as_int();
+    // Load path configuration parameters
+    config_.max_path_size = node_->get_parameter("px4_to_ros.path_config.max_path_size").as_int();
     
     // TF Publishing parameters
     node_->declare_parameter("px4_to_ros.tf_publishing.enable_tf", config_.enable_tf);
@@ -217,7 +217,7 @@ void Px4ToRosConverter::try_publish_synchronized_pose_path_and_tf()
     }
     
     // Update and publish path with same timestamp
-    if (config_.publish_path && path_pub_) {
+    if (config_.publish_path && path_pub_ && config_.max_path_size != 0) {
         update_vehicle_path(pose_msg);  // Uses pose timestamp (now synchronized)
         update_stats("path");
     }
@@ -352,7 +352,8 @@ void Px4ToRosConverter::update_vehicle_path(const geometry_msgs::msg::PoseWithCo
     vehicle_path_.poses.push_back(pose_stamped);
     
     // Simple size management - remove oldest when over limit
-    if (!config_.unlimited_path && vehicle_path_.poses.size() > config_.max_path_size) {
+    // 0 = disabled (handled above), -1 = unlimited, >0 = limited to that size
+    if (config_.max_path_size > 0 && vehicle_path_.poses.size() > static_cast<size_t>(config_.max_path_size)) {
         vehicle_path_.poses.erase(vehicle_path_.poses.begin());
     }
     

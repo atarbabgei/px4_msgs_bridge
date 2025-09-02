@@ -4,8 +4,9 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.substitutions import LaunchConfiguration, PythonExpression, Command
 from launch.conditions import IfCondition
 
 # === Configurable Parameters ===
@@ -23,10 +24,6 @@ from launch.conditions import IfCondition
 configurable_parameters = [
     # === Core Configuration ===
     {'name': 'config_file',                           'default': '',         'description': 'Path to the bridge configuration YAML file (leave empty for default)'},
-    {'name': 'visualizer',                            'default': '',         'description': 'Launch RViz2 for visualization (true/false). Empty = use bridge_config.yaml'},
-    {'name': 'rviz_config',                           'default': '',         'description': 'Path to RViz configuration file (leave empty for default)'},
-    
-    # === Global Configuration ===
     {'name': 'vehicle_namespace',                     'default': '',         'description': 'Vehicle namespace for ROS topics (e.g., vehicle, uav1, drone_alpha). Empty = use bridge_config.yaml'},
     
     # === PX4 → ROS Converter ===
@@ -38,11 +35,7 @@ configurable_parameters = [
     {'name': 'child_frame_id',                        'default': '',         'description': 'Child frame ID (e.g., base_link, base_footprint). Empty = use bridge_config.yaml'},
     
     # === Path Configuration ===
-    {'name': 'unlimited_path',                        'default': '',         'description': 'Enable unlimited path tracking (true/false)'},
-    {'name': 'max_path_size',                         'default': '',         'description': 'Maximum path size for tracking (integer)'},
-    
-    # === Synchronization ===
-    {'name': 'sync_threshold_us',                     'default': '',         'description': 'Max time diff between attitude/position in microseconds'},
+    {'name': 'max_path_size',                         'default': '',         'description': 'Maximum path size for tracking (0=disabled, inf=unlimited, >0=limited)'},
     
     # === TF Publishing ===
     {'name': 'enable_tf',                             'default': '',         'description': 'Master TF enable/disable (true/false). Empty = use bridge_config.yaml'},
@@ -58,6 +51,13 @@ configurable_parameters = [
     {'name': 'enable_external_odom',                  'default': '',         'description': 'Enable external odometry bridge (true/false). Empty = use bridge_config.yaml'},
     {'name': 'external_odom_topic',                   'default': '',         'description': 'External odometry topic (e.g., /zed/odom, /t265/odom/sample, /rtabmap/odom). Empty = use bridge_config.yaml'},
     {'name': 'odom_quality_threshold',                'default': '',         'description': 'Odometry quality threshold (0.0-1.0). Empty = use bridge_config.yaml'},
+
+    # === Visualization Configuration ===
+    {'name': 'visualizer',                            'default': '',         'description': 'Launch RViz2 for visualization (true/false). Empty = use bridge_config.yaml'},
+    {'name': 'visualizer_config_file',                'default': '',         'description': 'Path to RViz configuration file (leave empty for default)'},
+    {'name': 'visualizer_model_enable',               'default': '',         'description': 'Enable robot model in RViz (true/false). Empty = use bridge_config.yaml'},
+    {'name': 'visualizer_model_file',                 'default': '',         'description': 'Path to robot URDF/xacro file (leave empty for default quadcopter)'},
+    
 ]
 
 # NOTE: To modify permanent defaults, edit: config/bridge_config.yaml
@@ -74,16 +74,17 @@ def launch_bridge_node(context, *args, **kwargs):
     # Parameter mapping: launch_arg_name -> yaml_parameter_path
     param_mapping = {
         'vehicle_namespace': 'vehicle_namespace',
-        'visualizer': 'visualizer',
+        'visualizer': 'visualizer.enable',
+        'visualizer_config_file': 'visualizer.config_file',
+        'visualizer_model_enable': 'visualizer.robot_model.enable',
+        'visualizer_model_file': 'visualizer.robot_model.model_file',
         'publish_pose': 'px4_to_ros.publish_pose',
         'publish_path': 'px4_to_ros.publish_path', 
         'publish_odometry': 'px4_to_ros.publish_odometry',
         'publish_imu': 'px4_to_ros.publish_imu',
         'output_frame_id': 'px4_to_ros.output_frame_id',
         'child_frame_id': 'px4_to_ros.child_frame_id',
-        'unlimited_path': 'px4_to_ros.path_config.unlimited_path',
         'max_path_size': 'px4_to_ros.path_config.max_path_size',
-        'sync_threshold_us': 'px4_to_ros.sync_threshold_us',
         'enable_tf': 'px4_to_ros.tf_publishing.enable_tf',
         'publish_odom_tf': 'px4_to_ros.tf_publishing.publish_odom_tf',
         'publish_map_tf': 'px4_to_ros.tf_publishing.publish_map_tf',
@@ -99,15 +100,14 @@ def launch_bridge_node(context, *args, **kwargs):
     
     # Boolean parameters that need conversion
     boolean_params = {
-        'visualizer', 'publish_pose', 'publish_path', 'publish_odometry', 'publish_imu',
-        'unlimited_path', 'enable_tf', 'publish_odom_tf', 'publish_map_tf', 
+        'visualizer', 'visualizer_model_enable', 'publish_pose', 'publish_path', 'publish_odometry', 'publish_imu',
+        'enable_tf', 'publish_odom_tf', 'publish_map_tf', 
         'enable_external_odom'
     }
     
     # Numeric parameters that need conversion
     numeric_params = {
         'max_path_size': int,
-        'sync_threshold_us': int,
         'tf_rate': float,
         'map_tf_rate': float,
         'odom_quality_threshold': float,
@@ -118,7 +118,7 @@ def launch_bridge_node(context, *args, **kwargs):
         param_name = param['name']
         
         # Skip special parameters handled separately
-        if param_name in ['config_file', 'rviz_config']:
+        if param_name in ['config_file', 'visualizer_config_file']:
             continue
             
         if param_name in param_mapping:
@@ -131,7 +131,11 @@ def launch_bridge_node(context, *args, **kwargs):
                     param_overrides[yaml_path] = value.lower() == 'true'
                 elif param_name in numeric_params:
                     try:
-                        param_overrides[yaml_path] = numeric_params[param_name](value)
+                        # Special handling for max_path_size with 'inf' support
+                        if param_name == 'max_path_size' and value.lower() == 'inf':
+                            param_overrides[yaml_path] = -1  # Use -1 internally for unlimited
+                        else:
+                            param_overrides[yaml_path] = numeric_params[param_name](value)
                     except ValueError:
                         print(f"Warning: Invalid value '{value}' for parameter '{param_name}', skipping override")
                 else:
@@ -149,11 +153,76 @@ def launch_bridge_node(context, *args, **kwargs):
         parameters=parameters
     )]
 
+def launch_robot_state_publisher(context, *args, **kwargs):
+    """Create robot state publisher node conditionally"""
+    import yaml
+    
+    # Check visualizer_model_enable parameter
+    enable_robot_model_override = LaunchConfiguration('visualizer_model_enable').perform(context)
+    robot_model_file_override = LaunchConfiguration('visualizer_model_file').perform(context)
+    
+    # Determine if we should launch robot model
+    enable_robot_model = False
+    robot_model_file = ""
+    
+    if enable_robot_model_override and enable_robot_model_override.strip():
+        # Launch argument override provided
+        enable_robot_model = enable_robot_model_override.lower() == 'true'
+    else:
+        # No override provided, read from YAML config
+        try:
+            config_file_path = LaunchConfiguration('config_file').perform(context)
+            if config_file_path and os.path.exists(config_file_path):
+                with open(config_file_path, 'r') as f:
+                    config = yaml.safe_load(f)
+                    robot_config = config.get('px4_bridge_manager', {}).get('ros__parameters', {}).get('visualizer', {}).get('robot_model', {})
+                    enable_robot_model = robot_config.get('enable', False)
+                    if not robot_model_file_override or not robot_model_file_override.strip():
+                        robot_model_file = robot_config.get('model_file', '')
+            else:
+                # Fallback to false if no config file
+                enable_robot_model = False
+        except Exception as e:
+            print(f"Warning: Could not read robot_model from YAML config: {e}")
+            enable_robot_model = False
+    
+    # Use robot_model_file override if provided
+    if robot_model_file_override and robot_model_file_override.strip():
+        robot_model_file = robot_model_file_override
+    
+    if not enable_robot_model:
+        return []
+    
+    # Get package share directory
+    pkg_share = get_package_share_directory('px4_msgs_bridge')
+    
+    # Determine robot model file
+    if not robot_model_file or not robot_model_file.strip():
+        # Use default quadcopter model
+        robot_model_file = os.path.join(pkg_share, 'urdf', 'quadcopter.urdf.xacro')
+    
+    # Generate robot description from xacro
+    robot_description = Command(['xacro ', robot_model_file])
+    
+    return [
+        # Robot State Publisher
+        Node(
+            package='robot_state_publisher',
+            executable='robot_state_publisher',
+            name='robot_state_publisher',
+            output='screen',
+            parameters=[{
+                'robot_description': ParameterValue(robot_description, value_type=str),
+                'use_sim_time': False
+            }]
+        )
+    ]
+
 def launch_rviz_node(context, *args, **kwargs):
     """Create RViz2 node conditionally based on visualizer parameter"""
     import yaml
     
-    # Check visualizer parameter (same logic as bridge node)
+    # Check visualizer parameter
     visualizer_override = LaunchConfiguration('visualizer').perform(context)
     
     # Determine if we should launch RViz
@@ -169,7 +238,7 @@ def launch_rviz_node(context, *args, **kwargs):
             if config_file_path and os.path.exists(config_file_path):
                 with open(config_file_path, 'r') as f:
                     config = yaml.safe_load(f)
-                    launch_rviz = config.get('px4_bridge_manager', {}).get('ros__parameters', {}).get('visualizer', False)
+                    launch_rviz = config.get('px4_bridge_manager', {}).get('ros__parameters', {}).get('visualizer', {}).get('enable', False)
             else:
                 # Fallback to false if no config file
                 launch_rviz = False
@@ -183,7 +252,7 @@ def launch_rviz_node(context, *args, **kwargs):
             executable='rviz2',
             name='px4_bridge_rviz',
             output='screen',
-            arguments=['-d', LaunchConfiguration('rviz_config')],
+            arguments=['-d', LaunchConfiguration('visualizer_config_file')],
             parameters=[{
                 'use_sim_time': False  # Set to True if using simulation
             }]
@@ -210,7 +279,7 @@ def generate_launch_description():
         # Handle special default values
         if param_name == 'config_file' and not param_default:
             param_default = default_config_file
-        elif param_name == 'rviz_config' and not param_default:
+        elif param_name == 'visualizer_config_file' and not param_default:
             param_default = default_rviz_config
         
         # Create launch argument
@@ -228,6 +297,9 @@ def generate_launch_description():
         
         # === PX4 Bridge Manager Node (with conditional parameter overrides) ===
         OpaqueFunction(function=launch_bridge_node),
+        
+        # === Robot State Publisher (conditional launch) ===
+        OpaqueFunction(function=launch_robot_state_publisher),
         
         # === RViz2 Visualization (conditional launch based on YAML/override) ===
         OpaqueFunction(function=launch_rviz_node),

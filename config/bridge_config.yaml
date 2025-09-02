@@ -6,10 +6,7 @@ px4_bridge_manager:
     # === Global Configuration ===
     # Vehicle namespace for ROS topics (e.g., "vehicle", "uav1", "drone_alpha")
     vehicle_namespace: "vehicle"
-    
-    # Visualization
-    visualizer: false  # Launch RViz2 for bridge visualization (true/false)
-    
+     
     # === PX4 → ROS Converter Configuration ===
     px4_to_ros:
       # Publishing options
@@ -20,11 +17,7 @@ px4_bridge_manager:
       
       # Path tracking configuration - OPTIMIZED FOR MINIMAL DELAY
       path_config:
-        unlimited_path: false
-        max_path_size: 100       # Smaller path = faster processing/serialization
-      
-      # Synchronization settings - MINIMAL DELAY CONFIGURATION
-      sync_threshold_us: 2000    # 2ms - tight sync for 100Hz, minimal stale data
+        max_path_size: 100       # Path size limit (0=disabled, inf=unlimited, >0=limited). Smaller = faster processing/serialization
       
       # Frame configuration
       output_frame_id: "odom"    # Frame ID for all output messages
@@ -52,3 +45,12 @@ px4_bridge_manager:
         enable: true   # Set to true when you have external VIO/SLAM system
         input_topic: "/odom/sample"  # Common: /Odometry, /camera/odom/sample, /rtabmap/odom
         quality_threshold: 0.5       # Minimum odometry quality to accept
+    
+    # Visualization Configuration
+    visualizer:
+      enable: false                      # Launch RViz2 for bridge visualization (true/false)
+      config_file: ""                    # Path to custom RViz config file (empty = use default)
+      robot_model:
+        enable: false                    # Enable robot model in RViz (true/false)
+        model_file: ""                   # Path to custom URDF/xacro file (empty = use default quadcopter)
+   

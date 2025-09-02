@@ -43,14 +43,11 @@ git clone https://github.com/atarbabgei/px4_msgs_bridge.git
 # Return to workspace root
 cd ~/ros2_ws
 
-# Build dependencies first (these don't have rosdep entries)
-colcon build --packages-select px4_msgs micro_ros_msgs micro-ROS-Agent
-
 # Install system dependencies for the bridge package
 rosdep install --from-paths src/px4_msgs_bridge --ignore-src -r -y
 
-# Build the bridge package
-colcon build --packages-select px4_msgs_bridge
+# Build dependencies
+colcon build
 
 # Source the workspace
 source install/setup.bash

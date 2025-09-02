@@ -8,6 +8,8 @@ Panels:
         - /Status1
         - /PoseWithCovariance1/Covariance1
         - /PoseWithCovariance1/Covariance1/Position1
+        - /RobotModel1
+        - /TF1
         - /TF1/Frames1
         - /Path1/Offset1
       Splitter Ratio: 0.5
@@ -79,22 +81,85 @@ Visualization Manager:
       Shaft Radius: 0.05000000074505806
       Shape: Axes
       Topic:
-        Depth: 50
+        Depth: 1
         Durability Policy: Volatile
-        Filter size: 100
+        Filter size: 1
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /vehicle/pose
       Value: true
+    - Alpha: 1
+      Class: rviz_default_plugins/RobotModel
+      Collision Enabled: false
+      Description File: ""
+      Description Source: Topic
+      Description Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot_description
+      Enabled: true
+      Links:
+        All Links Enabled: true
+        Expand Joint Details: false
+        Expand Link Details: false
+        Expand Tree: false
+        Link Tree Style: Links in Alphabetic Order
+        back_left_propeller:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        back_right_propeller:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        base_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        front_left_propeller:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        front_right_propeller:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        imu_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+      Mass Properties:
+        Inertia: false
+        Mass: false
+      Name: RobotModel
+      TF Prefix: ""
+      Update Interval: 0
+      Value: true
+      Visual Enabled: true
     - Class: rviz_default_plugins/TF
       Enabled: true
       Frame Timeout: 5
       Frames:
         All Enabled: false
+        back_left_propeller:
+          Value: false
+        back_right_propeller:
+          Value: false
         base_link:
           Value: true
-        map:
+        front_left_propeller:
           Value: false
+        front_right_propeller:
+          Value: false
+        imu_link:
+          Value: true
         odom:
           Value: true
       Marker Scale: 1
@@ -103,9 +168,17 @@ Visualization Manager:
       Show Axes: true
       Show Names: true
       Tree:
-        map:
-          odom:
-            base_link:
+        odom:
+          base_link:
+            back_left_propeller:
+              {}
+            back_right_propeller:
+              {}
+            front_left_propeller:
+              {}
+            front_right_propeller:
+              {}
+            imu_link:
               {}
       Update Interval: 0
       Value: true
@@ -130,9 +203,9 @@ Visualization Manager:
       Shaft Diameter: 0.10000000149011612
       Shaft Length: 0.10000000149011612
       Topic:
-        Depth: 50
+        Depth: 1
         Durability Policy: Volatile
-        Filter size: 100
+        Filter size: 1
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /vehicle/path
@@ -183,7 +256,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 5.6949849128723145
+      Distance: 18.159128189086914
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -198,10 +271,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.1603972911834717
+      Pitch: 1.5597963333129883
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 3.3153982162475586
+      Yaw: 3.1153974533081055
     Saved: ~
 Window Geometry:
   Displays:

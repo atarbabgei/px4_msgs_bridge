@@ -161,11 +161,7 @@ private:
 
         
         // Path configuration
-        bool unlimited_path{false};
-        size_t max_path_size{1000};
-        
-        // Synchronization
-        uint64_t sync_threshold_us{2000};  // 2ms - matches bridge_config.yaml
+        int max_path_size{1000};  // 0 = disabled, -1 = unlimited (set via 'inf'), >0 = limited
         
         // Frame IDs
         std::string output_frame_id{"odom"};
