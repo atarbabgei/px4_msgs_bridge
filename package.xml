@@ -21,6 +21,7 @@
   
   <!-- Robot model dependencies -->
   <depend>robot_state_publisher</depend>
+  <depend>joint_state_publisher</depend>
   <depend>urdf</depend>
   <depend>xacro</depend>
 

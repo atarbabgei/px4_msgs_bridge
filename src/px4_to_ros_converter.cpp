@@ -35,6 +35,22 @@ void Px4ToRosConverter::initialize()
             this->sensor_callback(msg);
         });
 
+    // Create wheel encoder subscriber 
+    wheel_encoder_sub_ = node_->create_subscription<px4_msgs::msg::WheelEncoders>(
+        "/fmu/out/wheel_encoders",
+        get_px4_qos(),
+        [this](const px4_msgs::msg::WheelEncoders::SharedPtr msg) {
+            this->wheel_encoder_callback(msg);
+        });
+
+    // Create contact sensor debug value subscriber (0 to 2PI)
+    contact_sensor_sub_ = node_->create_subscription<px4_msgs::msg::DebugValue>(
+        "/fmu/out/debug_value",
+        get_px4_qos(),
+        [this](const px4_msgs::msg::DebugValue::SharedPtr msg) {
+            this->contact_debug_callback(msg);
+        });
+
     // Create ROS publishers based on configuration
     if (config_.publish_pose) {
         pose_pub_ = node_->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
@@ -63,6 +79,21 @@ void Px4ToRosConverter::initialize()
         RCLCPP_INFO(node_->get_logger(), "[%s] Publishing IMU on: %s", name_.c_str(), config_.imu_topic.c_str());
     }
 
+    if (config_.publish_joint_states) {
+        joint_state_pub_ = node_->create_publisher<sensor_msgs::msg::JointState>(
+            config_.joint_states_topic, get_standard_qos());
+        RCLCPP_INFO(node_->get_logger(), "[%s] Publishing joint states on: %s", 
+                   name_.c_str(), config_.joint_states_topic.c_str());
+    }
+
+    // Create contact point publisher
+    if (config_.publish_contact_point) {
+        contact_point_pub_ = node_->create_publisher<geometry_msgs::msg::PointStamped>(
+            config_.contact_point_topic, get_standard_qos());
+        RCLCPP_INFO(node_->get_logger(), "[%s] Publishing contact points on: %s", 
+                   name_.c_str(), config_.contact_point_topic.c_str());
+    }
+
 
 
     // Setup TF publishing if enabled
@@ -89,6 +120,11 @@ std::string Px4ToRosConverter::get_status() const
     status << "  Path publishing: " << (config_.publish_path ? "enabled" : "disabled") << "\n";
     status << "  Odometry publishing: " << (config_.publish_odometry ? "enabled" : "disabled") << "\n";
     status << "  IMU publishing: " << (config_.publish_imu ? "enabled" : "disabled") << "\n";
+    status << "  Joint states publishing: " << (config_.publish_joint_states ? "enabled" : "disabled") << "\n";
+    status << "  Contact point publishing: " << (config_.publish_contact_point ? "enabled" : "disabled") << "\n";
+    if (contact_debug_received_) {
+        status << "  Last contact angle: " << latest_contact_debug_.value << " rad\n";
+    }
 
     // TODO: Add actual subscriber/publisher counts
     return status.str();
@@ -101,6 +137,9 @@ void Px4ToRosConverter::load_configuration()
     node_->declare_parameter("px4_to_ros.publish_path", true);
     node_->declare_parameter("px4_to_ros.publish_odometry", true);
     node_->declare_parameter("px4_to_ros.publish_imu", true);
+    node_->declare_parameter("px4_to_ros.publish_joint_states", true);
+    node_->declare_parameter("px4_to_ros.publish_contact_point", true);
+    node_->declare_parameter("px4_to_ros.contact_debug_index", 0);
 
     node_->declare_parameter("px4_to_ros.output_frame_id", "odom");
     node_->declare_parameter("px4_to_ros.child_frame_id", "base_link");
@@ -113,6 +152,10 @@ void Px4ToRosConverter::load_configuration()
     config_.publish_path = node_->get_parameter("px4_to_ros.publish_path").as_bool();
     config_.publish_odometry = node_->get_parameter("px4_to_ros.publish_odometry").as_bool();
     config_.publish_imu = node_->get_parameter("px4_to_ros.publish_imu").as_bool();
+    config_.publish_joint_states = node_->get_parameter("px4_to_ros.publish_joint_states").as_bool();
+    config_.publish_contact_point = node_->get_parameter("px4_to_ros.publish_contact_point").as_bool();
+    config_.expected_debug_index = static_cast<int8_t>(
+        node_->get_parameter("px4_to_ros.contact_debug_index").as_int());
 
     config_.output_frame_id = node_->get_parameter("px4_to_ros.output_frame_id").as_string();
     config_.child_frame_id = node_->get_parameter("px4_to_ros.child_frame_id").as_string();
@@ -148,6 +191,8 @@ void Px4ToRosConverter::load_configuration()
     config_.path_topic = "/" + vehicle_namespace + "/path";
     config_.odom_topic = "/" + vehicle_namespace + "/odom";
     config_.imu_topic = "/" + vehicle_namespace + "/imu";
+    config_.joint_states_topic = "/" + vehicle_namespace + "/propeller_guard/joint_states";
+    config_.contact_point_topic = "/" + vehicle_namespace + "/propeller_guard/contact_point";
 
 
 }
@@ -183,6 +228,33 @@ void Px4ToRosConverter::sensor_callback(const px4_msgs::msg::SensorCombined::Sha
     update_stats("sensor");
 }
 
+void Px4ToRosConverter::wheel_encoder_callback(const px4_msgs::msg::WheelEncoders::SharedPtr msg)
+{
+    latest_wheel_encoders_ = *msg;
+    wheel_encoders_received_ = true;
+    
+    // Joint states will be published synchronized with TF - no independent publishing
+}
+
+void Px4ToRosConverter::contact_debug_callback(const px4_msgs::msg::DebugValue::SharedPtr msg)
+{
+    // Filter for contact sensor debug messages (check index)
+    if (msg->ind != config_.expected_debug_index) {
+        return; 
+    }
+    
+    latest_contact_debug_ = *msg;
+    contact_debug_received_ = true;
+    
+    if (config_.publish_contact_point && contact_point_pub_) {
+        auto contact_msg = convert_debug_to_contact_point();
+        contact_point_pub_->publish(contact_msg);
+        update_stats("contact_point");
+        
+
+    }
+}
+
 void Px4ToRosConverter::try_publish_synchronized_pose_path_and_tf()
 {
     // Need both attitude and position for pose
@@ -190,18 +262,18 @@ void Px4ToRosConverter::try_publish_synchronized_pose_path_and_tf()
         return;
     }
     
-    // RATE LIMITING: Use ROS system time for smooth, consistent publishing
-    static auto last_publish_time = std::chrono::steady_clock::now();
-    auto current_time = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(current_time - last_publish_time);
+    //
+    static rclcpp::Time last_publish_ros_time = rclcpp::Time(0);
+    auto current_ros_time = rclcpp::Clock().now();
     
-    // Target 100Hz (10ms intervals) to match PX4 source rate exactly
-    if (elapsed.count() < 10000) {  // 10ms = 100Hz exactly
+    // Target 100Hz (10ms intervals) 
+    auto elapsed_ms = (current_ros_time - last_publish_ros_time).seconds() * 1000.0;
+    if (elapsed_ms < 9.5) {  //threshold for reliable 100Hz+ 
         return;  // Skip - too soon since last publish
     }
     
-    // UPDATE IMMEDIATELY after rate check passes
-    last_publish_time = current_time;
+    // Update last publish time
+    last_publish_ros_time = current_ros_time;
     
     // SYNCHRONIZED PUBLISHING: Use identical ROS timestamp for pose, path, and TF
     auto synchronized_timestamp = rclcpp::Clock().now();
@@ -218,13 +290,22 @@ void Px4ToRosConverter::try_publish_synchronized_pose_path_and_tf()
     
     // Update and publish path with same timestamp
     if (config_.publish_path && path_pub_ && config_.max_path_size != 0) {
-        update_vehicle_path(pose_msg);  // Uses pose timestamp (now synchronized)
+        update_vehicle_path(pose_msg);  
         update_stats("path");
     }
     
-    // PUBLISH TF WITH SAME TIMESTAMP (no separate timers)
+    // PUBLISH TF WITH SAME TIMESTAMP 
     if (config_.enable_tf) {
         publish_synchronized_tf(synchronized_timestamp);
+    }
+    
+    // PUBLISH JOINT STATES AT SAME RATE AS TF for consistent transform tree
+    if (config_.publish_joint_states && joint_state_pub_ && wheel_encoders_received_) {
+        // Publish every time we publish TF (no separate rate limiting)
+        auto joint_msg = convert_wheel_encoders_to_joint_state();
+        joint_msg.header.stamp = synchronized_timestamp;  // Identical timestamp as TF
+        joint_state_pub_->publish(joint_msg);
+        update_stats("joint_states");
     }
     
     // Publish odometry
@@ -249,11 +330,13 @@ void Px4ToRosConverter::try_publish_imu()
     }
 }
 
+
+
 geometry_msgs::msg::PoseWithCovarianceStamped Px4ToRosConverter::convert_vehicle_pose_with_covariance()
 {
     geometry_msgs::msg::PoseWithCovarianceStamped pose_msg;
     
-    // Set header - USE ROS TIME (DDS synchronized)
+    // Set header
     pose_msg.header.frame_id = config_.output_frame_id;
     pose_msg.header.stamp = rclcpp::Clock().now();  // DDS-synchronized ROS time
     
@@ -334,6 +417,57 @@ sensor_msgs::msg::Imu Px4ToRosConverter::convert_vehicle_imu()
     }
     
     return imu_msg;
+}
+
+sensor_msgs::msg::JointState Px4ToRosConverter::convert_wheel_encoders_to_joint_state()
+{
+    sensor_msgs::msg::JointState joint_msg;
+    
+    // Header timestamp 
+    joint_msg.header.frame_id = "base_link";
+    
+    // Set joint name (matches URDF)
+    joint_msg.name = {"propeller_guard_joint"};
+    
+    // Set position (wheel angle in radians from [0] only)
+    joint_msg.position = {
+        static_cast<double>(latest_wheel_encoders_.wheel_angle[0])
+    };
+    
+    // Set velocity (wheel speed in rad/s from [0] only)
+    joint_msg.velocity = {
+        static_cast<double>(latest_wheel_encoders_.wheel_speed[0])
+    };
+    
+    // Leave effort empty (encoders don't measure torque)
+    joint_msg.effort = {};
+    
+    return joint_msg;
+}
+
+geometry_msgs::msg::PointStamped Px4ToRosConverter::convert_debug_to_contact_point()
+{
+    geometry_msgs::msg::PointStamped contact_msg;
+    
+    // Set header - in propeller_guard frame (contact moves with the spinning guard)
+    contact_msg.header.stamp = rclcpp::Clock().now();
+    contact_msg.header.frame_id = "propeller_guard";
+    
+    // Get contact angle directly from debug value - this represents the actual
+    // physical location on the guard where contact is occurring
+    double contact_angle = static_cast<double>(latest_contact_debug_.value);
+    
+    // Ensure angle is in valid range [0, 2π]
+    while (contact_angle < 0) contact_angle += 2.0 * M_PI;
+    while (contact_angle >= 2.0 * M_PI) contact_angle -= 2.0 * M_PI;
+    
+    // Calculate contact point coordinates on the ring
+    // This represents the physical location on the guard that's touching the obstacle
+    contact_msg.point.x = GUARD_RADIUS * cos(contact_angle);
+    contact_msg.point.y = GUARD_RADIUS * sin(contact_angle);
+    contact_msg.point.z = 0.0;  // Contact is on the ring surface
+    
+    return contact_msg;
 }
 
 
@@ -420,7 +554,12 @@ void Px4ToRosConverter::update_stats(const std::string& message_type)
     } else if (message_type == "imu") {
         stats_.imu_published++;
         stats_.last_imu_time = node_->get_clock()->now();
-
+    } else if (message_type == "joint_states") {
+        stats_.joint_states_published++;
+        stats_.last_joint_state_time = node_->get_clock()->now();
+    } else if (message_type == "contact_point") {
+        stats_.contact_point_published++;
+        stats_.last_contact_time = node_->get_clock()->now();
     }
 }
 
@@ -474,7 +613,7 @@ void Px4ToRosConverter::publish_odom_tf_with_timestamp(const builtin_interfaces:
     odom_tf.header.frame_id = config_.odom_frame;
     odom_tf.child_frame_id = config_.base_link_frame;
     
-    // Set translation: Use PX4 position as-is (trust PX4's best estimate)
+    // Set translation: Use PX4 position as-is 
     if (position_received_) {
         // Use PX4 position data directly (NED to custom frame conversion)
         odom_tf.transform.translation.x = latest_position_.x;  

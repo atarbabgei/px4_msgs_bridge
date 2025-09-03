@@ -1,0 +1,67 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="px4_quadcopter_with_propeller_guard">
+  
+  <!-- Include the base quadcopter model -->
+  <xacro:include filename="$(find px4_msgs_bridge)/urdf/quadcopter.urdf.xacro" />
+  
+  <!-- Additional materials for propeller guard -->
+  <material name="guard_transparent">
+    <color rgba="0.4 0.4 0.4 0.6"/>
+  </material>
+
+  <!-- Propeller Guard Link - Single protective ring around entire drone -->
+  <link name="propeller_guard">
+    <visual>
+      <!-- Main guard ring - matches SDF dimensions -->
+      <geometry>
+        <cylinder radius="0.39" length="0.026"/>
+      </geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <material name="guard_transparent"/>
+    </visual>
+    
+    <visual>
+      <!-- Guard marker 1 -->
+      <geometry>
+        <box size="0.026 0.13 0.013"/>
+      </geometry>
+      <origin xyz="0.364 0 0.013" rpy="0 0 0"/>
+      <material name="light_grey"/>
+    </visual>
+    
+    <visual>
+      <!-- Guard marker 2 -->
+      <geometry>
+        <box size="0.026 0.13 0.013"/>
+      </geometry>
+      <origin xyz="-0.364 0 0.013" rpy="0 0 0"/>
+      <material name="light_grey"/>
+    </visual>
+
+    <collision>
+      <geometry>
+        <cylinder radius="0.39" length="0.026"/>
+      </geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </collision>
+
+    <inertial>
+      <mass value="0.1"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0"
+               iyy="0.001" iyz="0.0"
+               izz="0.001"/>
+    </inertial>
+  </link>
+
+  <!-- Revolute joint: base_link -> propeller_guard (direct connection) -->
+  <joint name="propeller_guard_joint" type="revolute">
+    <parent link="base_link"/>
+    <child link="propeller_guard"/>
+    <origin xyz="0 0 0.025" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.14159" upper="3.14159" effort="1.0" velocity="10.0"/>
+    <dynamics damping="0.001" friction="0.001"/>
+  </joint>
+
+</robot>

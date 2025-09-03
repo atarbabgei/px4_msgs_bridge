@@ -5,10 +5,14 @@
 #include <px4_msgs/msg/vehicle_attitude.hpp>
 #include <px4_msgs/msg/vehicle_local_position.hpp>
 #include <px4_msgs/msg/sensor_combined.hpp>
+#include <px4_msgs/msg/wheel_encoders.hpp>
+#include <px4_msgs/msg/debug_value.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+#include <geometry_msgs/msg/point_stamped.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <sensor_msgs/msg/imu.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
 #include <tf2_ros/transform_broadcaster.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -60,6 +64,8 @@ private:
     rclcpp::Subscription<px4_msgs::msg::VehicleAttitude>::SharedPtr attitude_sub_;
     rclcpp::Subscription<px4_msgs::msg::VehicleLocalPosition>::SharedPtr position_sub_;
     rclcpp::Subscription<px4_msgs::msg::SensorCombined>::SharedPtr sensor_sub_;
+    rclcpp::Subscription<px4_msgs::msg::WheelEncoders>::SharedPtr wheel_encoder_sub_;
+    rclcpp::Subscription<px4_msgs::msg::DebugValue>::SharedPtr contact_sensor_sub_;
     
     // === ROS Message Publishers ===
     
@@ -67,6 +73,8 @@ private:
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr contact_point_pub_;
     
     // TF Broadcasting
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
@@ -79,9 +87,17 @@ private:
     px4_msgs::msg::VehicleAttitude latest_attitude_;
     px4_msgs::msg::VehicleLocalPosition latest_position_;
     px4_msgs::msg::SensorCombined latest_sensors_;
+    px4_msgs::msg::WheelEncoders latest_wheel_encoders_;
+    px4_msgs::msg::DebugValue latest_contact_debug_;
     bool attitude_received_{false};
     bool position_received_{false};
     bool sensors_received_{false};
+    bool wheel_encoders_received_{false};
+    bool contact_debug_received_{false};
+    
+    // Contact sensor constants
+    static constexpr double GUARD_RADIUS = 0.39;   // meters (matches both SDF and URDF)
+    static constexpr double GUARD_HEIGHT = 0.025;  // meters above base_link (matches URDF joint origin)
     // === Callback Handlers ===
     
     /**
@@ -102,6 +118,18 @@ private:
      */
     void sensor_callback(const px4_msgs::msg::SensorCombined::SharedPtr msg);
     
+    /**
+     * @brief Handle incoming wheel encoder messages
+     * @param msg WheelEncoders message from PX4
+     */
+    void wheel_encoder_callback(const px4_msgs::msg::WheelEncoders::SharedPtr msg);
+    
+    /**
+     * @brief Handle incoming contact messages it's remapped from a modified PX4 Autopilot Firmware (defines contact angle)
+     * @param msg DebugValue message from PX4
+     */
+    void contact_debug_callback(const px4_msgs::msg::DebugValue::SharedPtr msg);
+    
     // === Conversion and Publishing ===
     
     /**
@@ -114,6 +142,8 @@ private:
      * @brief Attempt to publish IMU when both attitude and sensor data are available
      */
     void try_publish_imu();
+    
+
     
     /**
      * @brief Update and publish vehicle path
@@ -141,6 +171,18 @@ private:
      */
     sensor_msgs::msg::Imu convert_vehicle_imu();
 
+    /**
+     * @brief Convert PX4 wheel encoders to ROS joint state
+     * @return sensor_msgs::msg::JointState Complete joint state message
+     */
+    sensor_msgs::msg::JointState convert_wheel_encoders_to_joint_state();
+
+    /**
+     * @brief Convert PX4 debug angle to contact point
+     * @return geometry_msgs::msg::PointStamped Contact point on guard ring
+     */
+    geometry_msgs::msg::PointStamped convert_debug_to_contact_point();
+
 
     
     // === Configuration ===
@@ -151,6 +193,8 @@ private:
         std::string path_topic{"/vehicle/path"};
         std::string odom_topic{"/vehicle/odom"};
         std::string imu_topic{"/vehicle/imu"};
+        std::string joint_states_topic{"/vehicle/propeller_guard/joint_states"};
+        std::string contact_point_topic{"/vehicle/propeller_guard/contact_point"};
 
         
         // Publishing enables
@@ -158,6 +202,8 @@ private:
         bool publish_path{true};
         bool publish_odometry{true};
         bool publish_imu{true};
+        bool publish_joint_states{true};
+        bool publish_contact_point{true};
 
         
         // Path configuration
@@ -176,6 +222,9 @@ private:
         std::string base_link_frame{"base_link"};
         double tf_rate{50.0};
         double map_tf_rate{10.0};
+        
+        // Contact sensor configuration
+        int8_t expected_debug_index{0};  // Expected ind value for contact sensor
     } config_;
     
     /**
@@ -245,10 +294,14 @@ private:
         size_t paths_published{0};
         size_t odom_published{0};
         size_t imu_published{0};
+        size_t joint_states_published{0};
+        size_t contact_point_published{0};
 
         size_t sync_failures{0};  // Messages dropped due to poor synchronization
         rclcpp::Time last_pose_time;
         rclcpp::Time last_imu_time;
+        rclcpp::Time last_joint_state_time;
+        rclcpp::Time last_contact_time;
     } stats_;
     
     /**
