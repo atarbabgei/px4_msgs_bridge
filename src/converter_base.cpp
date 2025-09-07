@@ -27,7 +27,10 @@ builtin_interfaces::msg::Time ConverterBase::convert_px4_timestamp(uint64_t px4_
     (void)px4_timestamp_us;  // Intentionally unused - we use ROS time for consistency
 
     // The uXRCE-DDS middleware handles PX4<->ROS time sync automatically
-    return rclcpp::Clock().now();
+    // Use the node's clock to respect simulation time settings
+    // Note: This is used by the base class, node_->now() should be fine here
+    // as it's automatically configured by ROS2 parameter system
+    return node_->now();
 
 }
 

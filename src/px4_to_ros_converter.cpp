@@ -12,6 +12,29 @@ Px4ToRosConverter::Px4ToRosConverter(rclcpp::Node* node)
 
 void Px4ToRosConverter::initialize()
 {
+    // CRITICAL: Ensure use_sim_time is properly set 
+    // Get use_sim_time parameter from parent node (automatically declared by ROS2)
+    bool use_sim_time = node_->get_parameter_or("use_sim_time", false);
+    RCLCPP_INFO(node_->get_logger(), "[%s] Initializing with use_sim_time=%s", 
+               name_.c_str(), use_sim_time ? "true" : "false");
+    
+    // Log what time we're actually using
+    auto test_time = node_->now();
+    RCLCPP_INFO(node_->get_logger(), "[%s] Current node time: %.9f seconds", 
+               name_.c_str(), test_time.seconds());
+    
+    if (use_sim_time) {
+        RCLCPP_INFO(node_->get_logger(), "[%s] Node should be using simulation time from /clock topic", name_.c_str());
+    } else {
+        RCLCPP_INFO(node_->get_logger(), "[%s] Node using system time", name_.c_str());
+    }
+    
+    // Initialize statistics time fields with correct clock type to avoid time source mismatches
+    auto initial_time = node_->now();
+    stats_.last_pose_time = initial_time;
+    stats_.last_imu_time = initial_time;
+    stats_.last_joint_state_time = initial_time;
+    stats_.last_contact_time = initial_time;
     
     // Create PX4 subscribers
     attitude_sub_ = node_->create_subscription<px4_msgs::msg::VehicleAttitude>(
@@ -262,21 +285,11 @@ void Px4ToRosConverter::try_publish_synchronized_pose_path_and_tf()
         return;
     }
     
-    //
-    static rclcpp::Time last_publish_ros_time = rclcpp::Time(0);
-    auto current_ros_time = rclcpp::Clock().now();
-    
-    // Target 100Hz (10ms intervals) 
-    auto elapsed_ms = (current_ros_time - last_publish_ros_time).seconds() * 1000.0;
-    if (elapsed_ms < 9.5) {  //threshold for reliable 100Hz+ 
-        return;  // Skip - too soon since last publish
-    }
-    
-    // Update last publish time
-    last_publish_ros_time = current_ros_time;
+    // Disable rate limiting for now to avoid time source mismatch issues
+    // TODO: Re-implement rate limiting with proper clock handling later if needed
     
     // SYNCHRONIZED PUBLISHING: Use identical ROS timestamp for pose, path, and TF
-    auto synchronized_timestamp = rclcpp::Clock().now();
+    auto synchronized_timestamp = get_current_timestamp();  // Use consistent timestamp method
     
     // Convert to pose message with synchronized timestamp
     auto pose_msg = convert_vehicle_pose_with_covariance();
@@ -338,7 +351,7 @@ geometry_msgs::msg::PoseWithCovarianceStamped Px4ToRosConverter::convert_vehicle
     
     // Set header
     pose_msg.header.frame_id = config_.output_frame_id;
-    pose_msg.header.stamp = rclcpp::Clock().now();  // DDS-synchronized ROS time
+    pose_msg.header.stamp = get_current_timestamp();  // Use consistent timestamp method
     
     // Convert position from NED to ENU
     float pos_ned[3] = {latest_position_.x, latest_position_.y, latest_position_.z};
@@ -391,7 +404,7 @@ sensor_msgs::msg::Imu Px4ToRosConverter::convert_vehicle_imu()
     
     // Set header
     imu_msg.header.frame_id = config_.child_frame_id;
-    imu_msg.header.stamp = rclcpp::Clock().now(); 
+    imu_msg.header.stamp = get_current_timestamp();  // Use consistent timestamp method 
     
     // Convert orientation from NED to your custom coordinate frame
     float q_ned[4] = {latest_attitude_.q[0], latest_attitude_.q[1], latest_attitude_.q[2], latest_attitude_.q[3]};
@@ -450,7 +463,7 @@ geometry_msgs::msg::PointStamped Px4ToRosConverter::convert_debug_to_contact_poi
     geometry_msgs::msg::PointStamped contact_msg;
     
     // Set header - in propeller_guard frame (contact moves with the spinning guard)
-    contact_msg.header.stamp = rclcpp::Clock().now();
+    contact_msg.header.stamp = get_current_timestamp();  // Use consistent timestamp method
     contact_msg.header.frame_id = "propeller_guard";
     
     // Get contact angle directly from debug value - this represents the actual
@@ -542,24 +555,31 @@ void Px4ToRosConverter::set_pose_covariance(const px4_msgs::msg::VehicleLocalPos
     covariance[35] = 0.1;  // yaw variance
 }
 
+builtin_interfaces::msg::Time Px4ToRosConverter::get_current_timestamp() const
+{
+    // CRITICAL: Always use node's time to respect use_sim_time parameter
+    // The node automatically handles simulation vs system time based on use_sim_time parameter
+    return node_->now();
+}
+
 void Px4ToRosConverter::update_stats(const std::string& message_type)
 {
     if (message_type == "pose") {
         stats_.poses_published++;
-        stats_.last_pose_time = node_->get_clock()->now();
+        stats_.last_pose_time = node_->now();  // Use node's time (respects use_sim_time)
     } else if (message_type == "path") {
         stats_.paths_published++;
     } else if (message_type == "odom") {
         stats_.odom_published++;
     } else if (message_type == "imu") {
         stats_.imu_published++;
-        stats_.last_imu_time = node_->get_clock()->now();
+        stats_.last_imu_time = node_->now();  // Use node's time (respects use_sim_time)
     } else if (message_type == "joint_states") {
         stats_.joint_states_published++;
-        stats_.last_joint_state_time = node_->get_clock()->now();
+        stats_.last_joint_state_time = node_->now();  // Use node's time (respects use_sim_time)
     } else if (message_type == "contact_point") {
         stats_.contact_point_published++;
-        stats_.last_contact_time = node_->get_clock()->now();
+        stats_.last_contact_time = node_->now();  // Use node's time (respects use_sim_time)
     }
 }
 

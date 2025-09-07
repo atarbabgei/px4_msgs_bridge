@@ -57,6 +57,21 @@ void BridgeManager::load_configuration()
     // Load configuration
     config_.vehicle_namespace = this->get_parameter("vehicle_namespace").as_string();
     
+    // Get use_sim_time parameter (automatically declared by ROS2)
+    // Default to false if not provided
+    config_.use_sim_time = this->get_parameter_or("use_sim_time", false);
+    
+    RCLCPP_INFO(this->get_logger(), "Bridge configuration loaded: namespace='%s', use_sim_time=%s", 
+               config_.vehicle_namespace.c_str(), 
+               config_.use_sim_time ? "true" : "false");
+    
+    // Log the centralized time management approach
+    if (config_.use_sim_time) {
+        RCLCPP_INFO(this->get_logger(), "Using centralized time management - all converters will use this node's time source");
+        auto test_time = this->now();
+        RCLCPP_INFO(this->get_logger(), "Bridge manager time: %.9f seconds", test_time.seconds());
+    }
+    
     // Hardcoded enable flags (always enable both converters)
     config_.enable_px4_to_ros = true;
     config_.enable_ros_to_px4 = true;

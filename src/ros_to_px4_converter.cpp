@@ -13,6 +13,25 @@ RosToPx4Converter::RosToPx4Converter(rclcpp::Node* node)
 
 void RosToPx4Converter::initialize()
 {
+    // CRITICAL: Ensure use_sim_time is properly set 
+    // Get use_sim_time parameter from parent node (automatically declared by ROS2)
+    bool use_sim_time = node_->get_parameter_or("use_sim_time", false);
+    RCLCPP_INFO(node_->get_logger(), "[%s] Initializing with use_sim_time=%s", 
+               name_.c_str(), use_sim_time ? "true" : "false");
+    
+    // Log what time we're actually using
+    auto test_time = node_->now();
+    RCLCPP_INFO(node_->get_logger(), "[%s] Current node time: %.9f seconds", 
+               name_.c_str(), test_time.seconds());
+    
+    if (use_sim_time) {
+        RCLCPP_INFO(node_->get_logger(), "[%s] Node should be using simulation time from /clock topic", name_.c_str());
+    } else {
+        RCLCPP_INFO(node_->get_logger(), "[%s] Node using system time", name_.c_str());
+    }
+    
+    // Initialize statistics time fields with correct clock type to avoid time source mismatches
+    stats_.last_message_time = node_->now();
     
     if (odom_to_vio_config_.enable) {
         setup_odometry_to_vio_bridge();
@@ -223,6 +242,13 @@ bool RosToPx4Converter::validate_odometry_quality(const nav_msgs::msg::Odometry:
     return true;
 }
 
+rclcpp::Time RosToPx4Converter::get_current_time() const
+{
+    // CRITICAL: Always use node's time to respect use_sim_time parameter
+    // The node automatically handles simulation vs system time based on use_sim_time parameter
+    return node_->now();
+}
+
 void RosToPx4Converter::update_stats(bool accepted)
 {
     if (accepted) {
@@ -230,7 +256,7 @@ void RosToPx4Converter::update_stats(bool accepted)
     } else {
         stats_.messages_rejected++;
     }
-    stats_.last_message_time = node_->get_clock()->now();
+    stats_.last_message_time = get_current_time();  // Use consistent time method
 }
 
 } // namespace px4_msgs_bridge

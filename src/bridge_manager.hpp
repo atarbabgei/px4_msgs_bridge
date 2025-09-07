@@ -65,6 +65,7 @@ private:
         bool enable_px4_to_ros{true};
         bool enable_ros_to_px4{true};
         double health_check_rate{1.0};  // Hz
+        bool use_sim_time{false};       // Use simulation time
     } config_;
     
     /**

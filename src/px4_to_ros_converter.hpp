@@ -80,6 +80,12 @@ private:
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
     rclcpp::TimerBase::SharedPtr tf_timer_;
     rclcpp::TimerBase::SharedPtr map_tf_timer_;
+    
+    /**
+     * @brief Get current time as builtin_interfaces::msg::Time using node's clock
+     * @return builtin_interfaces::msg::Time Current timestamp (respects use_sim_time)
+     */
+    builtin_interfaces::msg::Time get_current_timestamp() const;
 
     
     // === Message State Storage ===

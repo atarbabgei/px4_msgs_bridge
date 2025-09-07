@@ -52,6 +52,9 @@ configurable_parameters = [
     {'name': 'external_odom_topic',                   'default': '',         'description': 'External odometry topic (e.g., /zed/odom, /t265/odom/sample, /rtabmap/odom). Empty = use bridge_config.yaml'},
     {'name': 'odom_quality_threshold',                'default': '',         'description': 'Odometry quality threshold (0.0-1.0). Empty = use bridge_config.yaml'},
 
+    # === Simulation Configuration ===
+    {'name': 'use_sim_time',                          'default': '',         'description': 'Use simulation time instead of wall clock time (true/false). Empty = use bridge_config.yaml'},
+
     # === Visualization Configuration ===
     {'name': 'visualizer',                            'default': '',         'description': 'Launch RViz2 for visualization (true/false). Empty = use bridge_config.yaml'},
     {'name': 'visualizer_config_file',                'default': '',         'description': 'Path to RViz configuration file (leave empty for default)'},
@@ -74,6 +77,7 @@ def launch_bridge_node(context, *args, **kwargs):
     # Parameter mapping: launch_arg_name -> yaml_parameter_path
     param_mapping = {
         'vehicle_namespace': 'vehicle_namespace',
+        'use_sim_time': 'use_sim_time',
         'visualizer': 'visualizer.enable',
         'visualizer_config_file': 'visualizer.config_file',
         'visualizer_model_enable': 'visualizer.robot_model.enable',
@@ -102,7 +106,7 @@ def launch_bridge_node(context, *args, **kwargs):
     boolean_params = {
         'visualizer', 'visualizer_model_enable', 'publish_pose', 'publish_path', 'publish_odometry', 'publish_imu',
         'enable_tf', 'publish_odom_tf', 'publish_map_tf', 
-        'enable_external_odom'
+        'enable_external_odom', 'use_sim_time'
     }
     
     # Numeric parameters that need conversion
@@ -160,10 +164,31 @@ def launch_robot_state_publisher(context, *args, **kwargs):
     # Check visualizer_model_enable parameter
     enable_robot_model_override = LaunchConfiguration('visualizer_model_enable').perform(context)
     robot_model_file_override = LaunchConfiguration('visualizer_model_file').perform(context)
+    use_sim_time_override = LaunchConfiguration('use_sim_time').perform(context)
     
     # Determine if we should launch robot model
     enable_robot_model = False
     robot_model_file = ""
+    use_sim_time = False
+    
+    # Get use_sim_time value
+    if use_sim_time_override and use_sim_time_override.strip():
+        # Launch argument override provided
+        use_sim_time = use_sim_time_override.lower() == 'true'
+    else:
+        # No override provided, read from YAML config
+        try:
+            config_file_path = LaunchConfiguration('config_file').perform(context)
+            if config_file_path and os.path.exists(config_file_path):
+                with open(config_file_path, 'r') as f:
+                    config = yaml.safe_load(f)
+                    use_sim_time = config.get('px4_bridge_manager', {}).get('ros__parameters', {}).get('use_sim_time', False)
+            else:
+                # Fallback to false if no config file
+                use_sim_time = False
+        except Exception as e:
+            print(f"Warning: Could not read use_sim_time from YAML config: {e}")
+            use_sim_time = False
     
     if enable_robot_model_override and enable_robot_model_override.strip():
         # Launch argument override provided
@@ -213,7 +238,7 @@ def launch_robot_state_publisher(context, *args, **kwargs):
             output='screen',
             parameters=[{
                 'robot_description': ParameterValue(robot_description, value_type=str),
-                'use_sim_time': False
+                'use_sim_time': use_sim_time
             }]
         )
     ]
@@ -224,9 +249,30 @@ def launch_rviz_node(context, *args, **kwargs):
     
     # Check visualizer parameter
     visualizer_override = LaunchConfiguration('visualizer').perform(context)
+    use_sim_time_override = LaunchConfiguration('use_sim_time').perform(context)
     
     # Determine if we should launch RViz
     launch_rviz = False
+    use_sim_time = False
+    
+    # Get use_sim_time value
+    if use_sim_time_override and use_sim_time_override.strip():
+        # Launch argument override provided
+        use_sim_time = use_sim_time_override.lower() == 'true'
+    else:
+        # No override provided, read from YAML config
+        try:
+            config_file_path = LaunchConfiguration('config_file').perform(context)
+            if config_file_path and os.path.exists(config_file_path):
+                with open(config_file_path, 'r') as f:
+                    config = yaml.safe_load(f)
+                    use_sim_time = config.get('px4_bridge_manager', {}).get('ros__parameters', {}).get('use_sim_time', False)
+            else:
+                # Fallback to false if no config file
+                use_sim_time = False
+        except Exception as e:
+            print(f"Warning: Could not read use_sim_time from YAML config: {e}")
+            use_sim_time = False
     
     if visualizer_override and visualizer_override.strip():
         # Launch argument override provided
@@ -254,7 +300,7 @@ def launch_rviz_node(context, *args, **kwargs):
             output='screen',
             arguments=['-d', LaunchConfiguration('visualizer_config_file')],
             parameters=[{
-                'use_sim_time': False  # Set to True if using simulation
+                'use_sim_time': use_sim_time
             }]
         )]
     else:

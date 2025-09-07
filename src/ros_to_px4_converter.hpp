@@ -75,6 +75,12 @@ private:
     rclcpp::Publisher<px4_msgs::msg::VehicleOdometry>::SharedPtr px4_vio_pub_;
     rclcpp::TimerBase::SharedPtr subscription_monitor_timer_;
     
+    /**
+     * @brief Get current time using node's clock for consistency
+     * @return rclcpp::Time Current timestamp (respects use_sim_time)
+     */
+    rclcpp::Time get_current_time() const;
+    
     // === Configuration ===
     
     struct OdometryToVioConfig {

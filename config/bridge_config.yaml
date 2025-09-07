@@ -6,6 +6,10 @@ px4_bridge_manager:
     # === Global Configuration ===
     # Vehicle namespace for ROS topics
     vehicle_namespace: "vehicle"
+    
+    # === Simulation Configuration ===
+    # Use simulation time instead of wall clock time (important for Gazebo, etc.)
+    use_sim_time: false
      
     # === PX4 → ROS Converter Configuration ===
     px4_to_ros:

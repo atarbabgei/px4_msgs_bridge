@@ -44,6 +44,12 @@ def generate_launch_description():
         description='Vehicle namespace for ROS topics'
     )
     
+    use_sim_time_arg = DeclareLaunchArgument(
+        'use_sim_time',
+        default_value='true',
+        description='Use simulation time instead of wall clock time (true/false). Default: true for propeller guard visualization'
+    )
+    
     # PX4 Bridge Manager Node (with joint state publishing enabled)
     bridge_node = Node(
         package='px4_msgs_bridge',
@@ -52,6 +58,7 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'vehicle_namespace': LaunchConfiguration('vehicle_namespace'),
+            'use_sim_time': LaunchConfiguration('use_sim_time'),
             'px4_to_ros.publish_joint_states': True,
             'px4_to_ros.publish_contact_point': True,  # Enable contact sensor
             'px4_to_ros.contact_debug_index': 0,       # Expected debug index
@@ -68,6 +75,7 @@ def generate_launch_description():
     # Robot State Publisher - using OpaqueFunction to properly handle namespace
     def create_robot_state_publisher(context, *args, **kwargs):
         vehicle_namespace = LaunchConfiguration('vehicle_namespace').perform(context)
+        use_sim_time_value = LaunchConfiguration('use_sim_time').perform(context).lower() == 'true'
         joint_states_topic = f"/{vehicle_namespace}/propeller_guard/joint_states"
         
         return [Node(
@@ -80,7 +88,7 @@ def generate_launch_description():
                     Command(['xacro ', LaunchConfiguration('urdf_file')]), 
                     value_type=str
                 ),
-                'use_sim_time': False,
+                'use_sim_time': use_sim_time_value,
                 'publish_frequency': 100.0, 
                 'frame_prefix': '',
             }],
@@ -101,7 +109,7 @@ def generate_launch_description():
         output='screen',
         arguments=['-d', LaunchConfiguration('rviz_config')],
         parameters=[{
-            'use_sim_time': False
+            'use_sim_time': LaunchConfiguration('use_sim_time')
         }]
     )
     
@@ -110,6 +118,7 @@ def generate_launch_description():
         urdf_file_arg,
         rviz_config_arg,
         vehicle_namespace_arg,
+        use_sim_time_arg,
         
         # Nodes
         bridge_node,
