@@ -33,6 +33,7 @@ configurable_parameters = [
     {'name': 'publish_imu',                           'default': '',         'description': 'Enable IMU publishing (true/false). Empty = use bridge_config.yaml'},
     {'name': 'output_frame_id',                       'default': '',         'description': 'Frame ID for output messages (e.g., odom, map). Empty = use bridge_config.yaml'},
     {'name': 'child_frame_id',                        'default': '',         'description': 'Child frame ID (e.g., base_link, base_footprint). Empty = use bridge_config.yaml'},
+    {'name': 'velocity_frame_type',                   'default': '',         'description': 'Velocity reference frame (odom/base_link). Empty = use bridge_config.yaml'},
     
     # === Path Configuration ===
     {'name': 'max_path_size',                         'default': '',         'description': 'Maximum path size for tracking (0=disabled, inf=unlimited, >0=limited)'},
@@ -84,6 +85,7 @@ def launch_bridge_node(context, *args, **kwargs):
         'publish_imu': 'px4_to_ros.publish_imu',
         'output_frame_id': 'px4_to_ros.output_frame_id',
         'child_frame_id': 'px4_to_ros.child_frame_id',
+        'velocity_frame_type': 'px4_to_ros.velocity_frame_type',
         'max_path_size': 'px4_to_ros.path_config.max_path_size',
         'enable_tf': 'px4_to_ros.tf_publishing.enable_tf',
         'publish_odom_tf': 'px4_to_ros.tf_publishing.publish_odom_tf',

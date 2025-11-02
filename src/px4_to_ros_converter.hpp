@@ -167,6 +167,9 @@ private:
         std::string output_frame_id{"odom"};
         std::string child_frame_id{"base_link"};
         
+        // Velocity frame configuration
+        std::string velocity_frame_type{"odom"};  // "odom" (world-fixed) or "base_link" (body-fixed)
+        
         // TF Publishing Configuration
         bool enable_tf{true};
         bool publish_odom_tf{true};
@@ -229,6 +232,14 @@ private:
      */
     void ned_to_enu_position(const float pos_ned[3], 
                             geometry_msgs::msg::Point& pos_enu);
+    
+    /**
+     * @brief Transform velocity from world frame to body frame
+     * @param world_vel World-frame velocity [vx,vy,vz] in NED coordinates
+     * @param quaternion Vehicle attitude quaternion [w,x,y,z] in NED frame
+     * @param body_vel Output body-frame velocity [vx,vy,vz] in FRD coordinates
+     */
+    void world_to_body_velocity(const float world_vel[3], const float quaternion[4], float body_vel[3]);
     
     /**
      * @brief Set pose covariance based on PX4 validity flags

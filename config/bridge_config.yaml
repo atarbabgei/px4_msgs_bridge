@@ -12,7 +12,7 @@ px4_bridge_manager:
       # Publishing options
       publish_pose: true        # shown as /{vehicle_namespace}/pose
       publish_path: true        # shown as /{vehicle_namespace}/path
-      publish_odometry: false   # shown as /{vehicle_namespace}/odom
+      publish_odometry: true   # shown as /{vehicle_namespace}/odom
       publish_imu: true     # shown as /{vehicle_namespace}/imu
       
       # Path tracking configuration
@@ -22,6 +22,9 @@ px4_bridge_manager:
       # Frame configuration
       output_frame_id: "odom"    # Frame ID for all output messages
       child_frame_id: "base_link" # Child frame for odometry
+      
+      # Velocity frame configuration
+      velocity_frame_type: "base_link"          # Velocity reference frame: "odom" (world-fixed) or "base_link" (body-fixed)
       
       # TF Publishing Configuration
       tf_publishing:
@@ -45,7 +48,7 @@ px4_bridge_manager:
       # To Do: additional matrix conversion parameters for any other case
       external_odometry:
         enable: false   # Set to true when you have external VIO/SLAM system
-        input_topic: "/odom/sample"  # Common: /Odometry, /camera/odom/sample, /rtabmap/odom
+        input_topic: "/camera/odom/sample"  # Common: /Odometry, /camera/odom/sample, /rtabmap/odom
         quality_threshold: 0.5       # Minimum odometry quality to accept
     
     # Visualization Configuration
