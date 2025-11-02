@@ -163,8 +163,7 @@ void Px4ToRosConverter::attitude_callback(const px4_msgs::msg::VehicleAttitude::
     
     // Only publish from attitude callback to avoid double publishing
     try_publish_synchronized_pose_path_and_tf();
-    try_publish_imu();
-    update_stats("attitude");
+     update_stats("attitude");
 }
 
 void Px4ToRosConverter::position_callback(const px4_msgs::msg::VehicleLocalPosition::SharedPtr msg)
@@ -181,8 +180,7 @@ void Px4ToRosConverter::sensor_callback(const px4_msgs::msg::SensorCombined::Sha
     latest_sensors_ = *msg;
     sensors_received_ = true;
     
-    // Try to publish IMU when sensor data is updated
-    try_publish_imu();
+     try_publish_imu();
     
     update_stats("sensor");
 }
