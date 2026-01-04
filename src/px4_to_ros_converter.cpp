@@ -104,10 +104,12 @@ void Px4ToRosConverter::load_configuration()
 
     node_->declare_parameter("px4_to_ros.output_frame_id", "odom");
     node_->declare_parameter("px4_to_ros.child_frame_id", "base_link");
-    node_->declare_parameter("px4_to_ros.velocity_frame_type", "odom");
     
     // Path configuration parameters
     node_->declare_parameter("px4_to_ros.path_config.max_path_size", static_cast<int64_t>(config_.max_path_size));
+    
+    // Synchronization parameters
+    node_->declare_parameter("px4_to_ros.sync_threshold_us", static_cast<int64_t>(config_.sync_threshold_us));
     
     // Load configuration
     config_.publish_pose = node_->get_parameter("px4_to_ros.publish_pose").as_bool();
@@ -117,10 +119,12 @@ void Px4ToRosConverter::load_configuration()
 
     config_.output_frame_id = node_->get_parameter("px4_to_ros.output_frame_id").as_string();
     config_.child_frame_id = node_->get_parameter("px4_to_ros.child_frame_id").as_string();
-    config_.velocity_frame_type = node_->get_parameter("px4_to_ros.velocity_frame_type").as_string();
     
     // Load path configuration parameters
     config_.max_path_size = node_->get_parameter("px4_to_ros.path_config.max_path_size").as_int();
+    
+    // Load synchronization parameters
+    config_.sync_threshold_us = node_->get_parameter("px4_to_ros.sync_threshold_us").as_int();
     
     // TF Publishing parameters
     node_->declare_parameter("px4_to_ros.tf_publishing.enable_tf", config_.enable_tf);
@@ -151,8 +155,6 @@ void Px4ToRosConverter::load_configuration()
     config_.odom_topic = "/" + vehicle_namespace + "/odom";
     config_.imu_topic = "/" + vehicle_namespace + "/imu";
 
-    // Log velocity frame configuration
-    RCLCPP_INFO(node_->get_logger(), "[%s] Velocity frame type: %s", name_.c_str(), config_.velocity_frame_type.c_str());
 
 }
 
@@ -163,7 +165,8 @@ void Px4ToRosConverter::attitude_callback(const px4_msgs::msg::VehicleAttitude::
     
     // Only publish from attitude callback to avoid double publishing
     try_publish_synchronized_pose_path_and_tf();
-     update_stats("attitude");
+    try_publish_imu();
+    update_stats("attitude");
 }
 
 void Px4ToRosConverter::position_callback(const px4_msgs::msg::VehicleLocalPosition::SharedPtr msg)
@@ -180,7 +183,8 @@ void Px4ToRosConverter::sensor_callback(const px4_msgs::msg::SensorCombined::Sha
     latest_sensors_ = *msg;
     sensors_received_ = true;
     
-     try_publish_imu();
+    // Try to publish IMU when sensor data is updated
+    try_publish_imu();
     
     update_stats("sensor");
 }
@@ -284,26 +288,12 @@ nav_msgs::msg::Odometry Px4ToRosConverter::convert_vehicle_odometry(const geomet
     // Copy pose
     odom_msg.pose = pose_msg.pose;
     
-    // Convert velocity based on configured frame type
-    if (config_.velocity_frame_type == "base_link") {
-        // Transform velocity from world frame (NED) to body frame (FRD)
-        float world_vel[3] = {latest_position_.vx, latest_position_.vy, latest_position_.vz};
-        float q_ned[4] = {latest_attitude_.q[0], latest_attitude_.q[1], latest_attitude_.q[2], latest_attitude_.q[3]};
-        float body_vel[3];
-        world_to_body_velocity(world_vel, q_ned, body_vel);
-        
-        // Apply NED to ENU coordinate transformation for body-frame velocity
-        // Body FRD: x=forward, y=right, z=down → ENU: x=forward, y=-right, z=-down
-        odom_msg.twist.twist.linear.x = body_vel[0];    // Forward (body X+) 
-        odom_msg.twist.twist.linear.y = -body_vel[1];   // -Right = Left (body Y+ → ENU Y-)
-        odom_msg.twist.twist.linear.z = -body_vel[2];   // -Down = Up (body Z+ → ENU Z-)
-    } else {
-        // Default: velocity in world frame (NED) - original behavior  
-        // PX4 NED: vx=north, vy=east, vz=down → ENU: x=north, y=-east, z=-down (up)
-        odom_msg.twist.twist.linear.x = latest_position_.vx;
-        odom_msg.twist.twist.linear.y = -latest_position_.vy; 
-        odom_msg.twist.twist.linear.z = -latest_position_.vz;
-    }
+    // Convert velocity from PX4 local position (NED) to your custom coordinate frame
+    // PX4: vx=north, vy=east, vz=down
+    // Your mapping: x=north, y=-east, z=-down (up)
+    odom_msg.twist.twist.linear.x = latest_position_.vx;
+    odom_msg.twist.twist.linear.y = -latest_position_.vy; 
+    odom_msg.twist.twist.linear.z = -latest_position_.vz;
     
     // Angular velocity from NED to your custom coordinate frame (formula: (x,-y,-z)_NED)
     odom_msg.twist.twist.angular.x = latest_sensors_.gyro_rad[0];
@@ -398,44 +388,6 @@ void Px4ToRosConverter::ned_to_enu_position(const float pos_ned[3], geometry_msg
     pos_enu.x = pos_ned[0]; 
     pos_enu.y = -pos_ned[1];
     pos_enu.z = -pos_ned[2]; 
-}
-
-void Px4ToRosConverter::world_to_body_velocity(const float world_vel[3], const float quaternion[4], float body_vel[3])
-{
-    // Transform velocity from world frame (NED) to body frame (FRD) using inverse quaternion rotation
-    // quaternion = [w, x, y, z] - vehicle attitude in NED frame
-    // world_vel = [vx, vy, vz] - velocity in NED world frame
-    // body_vel = [vx, vy, vz] - output velocity in FRD body frame
-    
-    const float qw = quaternion[0];
-    const float qx = quaternion[1];
-    const float qy = quaternion[2];
-    const float qz = quaternion[3];
-    
-    // Apply inverse quaternion rotation: v_body = q_conj * v_world * q
-    // For efficiency, we use the direct formula for quaternion vector rotation
-    // v_rotated = v + 2 * q_xyz × (q_xyz × v + q_w * v)
-    // For inverse rotation, we use conjugate: q_conj = [w, -x, -y, -z]
-    
-    // Conjugate quaternion for inverse rotation
-    const float qx_conj = -qx;
-    const float qy_conj = -qy;
-    const float qz_conj = -qz;
-    
-    // First cross product: q_xyz_conj × v_world + qw * v_world
-    const float cross1_x = qy_conj * world_vel[2] - qz_conj * world_vel[1] + qw * world_vel[0];
-    const float cross1_y = qz_conj * world_vel[0] - qx_conj * world_vel[2] + qw * world_vel[1];
-    const float cross1_z = qx_conj * world_vel[1] - qy_conj * world_vel[0] + qw * world_vel[2];
-    
-    // Second cross product: q_xyz_conj × cross1
-    const float cross2_x = qy_conj * cross1_z - qz_conj * cross1_y;
-    const float cross2_y = qz_conj * cross1_x - qx_conj * cross1_z;
-    const float cross2_z = qx_conj * cross1_y - qy_conj * cross1_x;
-    
-    // Final result: v_world + 2 * cross2
-    body_vel[0] = world_vel[0] + 2.0f * cross2_x;
-    body_vel[1] = world_vel[1] + 2.0f * cross2_y;
-    body_vel[2] = world_vel[2] + 2.0f * cross2_z;
 }
 
 void Px4ToRosConverter::set_pose_covariance(const px4_msgs::msg::VehicleLocalPosition& position, std::array<double, 36>& covariance)
