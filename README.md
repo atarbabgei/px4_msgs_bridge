@@ -99,12 +99,34 @@ ros2 launch px4_msgs_bridge bridge.launch.py visualizer:=true
 ros2 launch px4_msgs_bridge bridge.launch.py \
   enable_external_odom:=true \
   external_odom_topic:=/camera/odom/sample
+
+# Use VehicleOdometry as position source instead of VehicleLocalPosition
+ros2 launch px4_msgs_bridge bridge.launch.py position_source:=vehicle_odometry
+
+# Use external joint states from hardware
+ros2 launch px4_msgs_bridge bridge.launch.py \
+  joint_state_source:=external \
+  external_joint_state_topic:=/joint_states
 ```
 
 **Available Parameters**: See `launch/bridge.launch.py` for all overrides
 
 > **External Odometry Setup Required**  
 > Before using external odometry, configure PX4 EKF2 parameters following the [PX4 External Position Estimation Guide](https://docs.px4.io/main/en/ros/external_position_estimation.html). This covers VIO/SLAM systems and Motion Capture (MoCap) setup.
+
+### Hardware Propeller Guard Launch
+
+For real hardware with a propeller guard and external joint states:
+```bash
+ros2 launch px4_msgs_bridge hardware_propeller_guard.launch.py
+```
+
+This launch file defaults to `vehicle_odometry` position source and `external` joint states from `/joint_states`. Override as needed:
+```bash
+ros2 launch px4_msgs_bridge hardware_propeller_guard.launch.py \
+  position_source:=vehicle_local_position \
+  external_joint_state_topic:=/my_joint_states
+```
 
 ## Feature: Message Conversions
 
@@ -119,6 +141,24 @@ ros2 launch px4_msgs_bridge bridge.launch.py \
   Complete odometry with pose and twist (from `/fmu/out/vehicle_attitude` + `/fmu/out/vehicle_local_position` + `/fmu/out/sensor_combined`)
 
 - Optional **`/tf`** frames outputs: `map` → `odom` → `base_link` 
+
+#### Position Source Options
+
+The bridge supports two position data sources, selectable via the `position_source` config parameter:
+
+| Source | PX4 Topics Used | Description |
+|--------|----------------|-------------|
+| `vehicle_local_position` (default) | `vehicle_attitude` + `vehicle_local_position` + `sensor_combined` | Multi-topic approach with detailed validity flags and eph/epv covariance |
+| `vehicle_odometry` | `vehicle_odometry` (+ `vehicle_attitude` + `sensor_combined` for IMU) | Single-message fused odometry with position/orientation/velocity variances |
+
+#### Joint State Source Options
+
+For propeller guard rotation, the bridge supports two joint state sources via `joint_state_source`:
+
+| Source | Input | Description |
+|--------|-------|-------------|
+| `wheel_encoders` (default) | `/fmu/out/wheel_encoders` | PX4 wheel encoder data (simulation) |
+| `external` | Configurable topic (default `/joint_states`) | Standard ROS2 JointState from real hardware |
 
 ### ROS → PX4
 - **`/external_position_estimation`** → `/fmu/in/vehicle_visual_odometry`  

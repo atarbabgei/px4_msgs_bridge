@@ -27,6 +27,9 @@ configurable_parameters = [
     {'name': 'vehicle_namespace',                     'default': '',         'description': 'Vehicle namespace for ROS topics (e.g., vehicle, uav1, drone_alpha). Empty = use bridge_config.yaml'},
     
     # === PX4 → ROS Converter ===
+    {'name': 'position_source',                       'default': '',         'description': 'Position data source: "vehicle_local_position" or "vehicle_odometry". Empty = use bridge_config.yaml'},
+    {'name': 'joint_state_source',                    'default': '',         'description': 'Joint state source: "wheel_encoders" or "external". Empty = use bridge_config.yaml'},
+    {'name': 'external_joint_state_topic',            'default': '',         'description': 'External joint state topic (when joint_state_source is "external"). Empty = use bridge_config.yaml'},
     {'name': 'publish_pose',                          'default': '',         'description': 'Enable pose publishing (true/false). Empty = use bridge_config.yaml'},
     {'name': 'publish_path',                          'default': '',         'description': 'Enable path publishing (true/false). Empty = use bridge_config.yaml'},
     {'name': 'publish_odometry',                      'default': '',         'description': 'Enable odometry publishing (true/false). Empty = use bridge_config.yaml'},
@@ -78,6 +81,9 @@ def launch_bridge_node(context, *args, **kwargs):
     param_mapping = {
         'vehicle_namespace': 'vehicle_namespace',
         'use_sim_time': 'use_sim_time',
+        'position_source': 'px4_to_ros.position_source',
+        'joint_state_source': 'px4_to_ros.joint_state_source',
+        'external_joint_state_topic': 'px4_to_ros.external_joint_state_topic',
         'visualizer': 'visualizer.enable',
         'visualizer_config_file': 'visualizer.config_file',
         'visualizer_model_enable': 'visualizer.robot_model.enable',

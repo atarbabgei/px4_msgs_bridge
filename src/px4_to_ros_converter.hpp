@@ -4,6 +4,7 @@
 #include "converter_base.hpp"
 #include <px4_msgs/msg/vehicle_attitude.hpp>
 #include <px4_msgs/msg/vehicle_local_position.hpp>
+#include <px4_msgs/msg/vehicle_odometry.hpp>
 #include <px4_msgs/msg/sensor_combined.hpp>
 #include <px4_msgs/msg/wheel_encoders.hpp>
 #include <px4_msgs/msg/debug_value.hpp>
@@ -28,6 +29,7 @@ namespace px4_msgs_bridge {
  * 
  * Supported conversions:
  * - VehicleAttitude + VehicleLocalPosition → PoseWithCovarianceStamped
+ * - VehicleOdometry → PoseWithCovarianceStamped (alternative position source)
  * - VehicleLocalPosition → Path (trajectory tracking)
  * - VehicleAttitude + VehicleLocalPosition + SensorCombined → Odometry
  * - VehicleAttitude + SensorCombined → Imu
@@ -63,9 +65,11 @@ private:
     
     rclcpp::Subscription<px4_msgs::msg::VehicleAttitude>::SharedPtr attitude_sub_;
     rclcpp::Subscription<px4_msgs::msg::VehicleLocalPosition>::SharedPtr position_sub_;
+    rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr vehicle_odom_sub_;
     rclcpp::Subscription<px4_msgs::msg::SensorCombined>::SharedPtr sensor_sub_;
     rclcpp::Subscription<px4_msgs::msg::WheelEncoders>::SharedPtr wheel_encoder_sub_;
     rclcpp::Subscription<px4_msgs::msg::DebugValue>::SharedPtr contact_sensor_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr external_joint_state_sub_;
     
     // === ROS Message Publishers ===
     
@@ -92,14 +96,18 @@ private:
     
     px4_msgs::msg::VehicleAttitude latest_attitude_;
     px4_msgs::msg::VehicleLocalPosition latest_position_;
+    px4_msgs::msg::VehicleOdometry latest_vehicle_odom_;
     px4_msgs::msg::SensorCombined latest_sensors_;
     px4_msgs::msg::WheelEncoders latest_wheel_encoders_;
     px4_msgs::msg::DebugValue latest_contact_debug_;
+    sensor_msgs::msg::JointState latest_external_joint_state_;
     bool attitude_received_{false};
     bool position_received_{false};
+    bool vehicle_odom_received_{false};
     bool sensors_received_{false};
     bool wheel_encoders_received_{false};
     bool contact_debug_received_{false};
+    bool external_joint_state_received_{false};
     
     // Contact sensor constants
     static constexpr double GUARD_RADIUS = 0.39;   // meters (matches both SDF and URDF)
@@ -131,10 +139,22 @@ private:
     void wheel_encoder_callback(const px4_msgs::msg::WheelEncoders::SharedPtr msg);
     
     /**
+     * @brief Handle incoming vehicle odometry messages (alternative position source)
+     * @param msg VehicleOdometry message from PX4
+     */
+    void vehicle_odometry_callback(const px4_msgs::msg::VehicleOdometry::SharedPtr msg);
+    
+    /**
      * @brief Handle incoming contact messages it's remapped from a modified PX4 Autopilot Firmware (defines contact angle)
      * @param msg DebugValue message from PX4
      */
     void contact_debug_callback(const px4_msgs::msg::DebugValue::SharedPtr msg);
+    
+    /**
+     * @brief Handle incoming external joint state messages (from real hardware)
+     * @param msg JointState message from hardware
+     */
+    void external_joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg);
     
     // === Conversion and Publishing ===
     
@@ -162,6 +182,12 @@ private:
      * @return geometry_msgs::msg::PoseWithCovarianceStamped Complete pose message
      */
     geometry_msgs::msg::PoseWithCovarianceStamped convert_vehicle_pose_with_covariance();
+    
+    /**
+     * @brief Convert PX4 VehicleOdometry to ROS pose with covariance (alternative source)
+     * @return geometry_msgs::msg::PoseWithCovarianceStamped Complete pose message
+     */
+    geometry_msgs::msg::PoseWithCovarianceStamped convert_vehicle_pose_from_odom();
     
     /**
      * @brief Convert pose and velocity data to odometry message
@@ -202,6 +228,13 @@ private:
         std::string joint_states_topic{"/vehicle/propeller_guard/joint_states"};
         std::string contact_point_topic{"/vehicle/propeller_guard/contact_point"};
 
+        
+        // Position source: "vehicle_local_position" or "vehicle_odometry"
+        std::string position_source{"vehicle_local_position"};
+        
+        // Joint state source: "wheel_encoders" or "external"
+        std::string joint_state_source{"wheel_encoders"};
+        std::string external_joint_state_topic{"/joint_states"};
         
         // Publishing enables
         bool publish_pose{true};
@@ -270,20 +303,58 @@ private:
     // === Coordinate Frame Conversion Utilities ===
     
     /**
-     * @brief Convert PX4 NED quaternion to ROS ENU-style quaternion
-     * @param q_ned PX4 quaternion [w,x,y,z] in NED frame
-     * @param q_enu Output ROS quaternion in ENU-style frame
+     * @brief Convert PX4 NED quaternion to custom frame quaternion (used by vehicle_local_position)
+     * Custom mapping: q_out = (w, x, -y, -z) from NED
+     * @param q_ned PX4 quaternion [w,x,y,z] in NED/FRD frame
+     * @param q_out Output ROS quaternion in custom frame
      */
     void ned_to_enu_quaternion(const float q_ned[4], 
-                              geometry_msgs::msg::Quaternion& q_enu);
+                              geometry_msgs::msg::Quaternion& q_out);
     
     /**
-     * @brief Convert PX4 NED position to ROS ENU-style position
+     * @brief Convert PX4 NED position to custom frame position (used by vehicle_local_position)
+     * Custom mapping: (x, -y, -z) from NED
      * @param pos_ned PX4 position [x,y,z] in NED frame
-     * @param pos_enu Output ROS position in ENU-style frame
+     * @param pos_out Output ROS position in custom frame
      */
     void ned_to_enu_position(const float pos_ned[3], 
-                            geometry_msgs::msg::Point& pos_enu);
+                            geometry_msgs::msg::Point& pos_out);
+    
+    /**
+     * @brief Convert PX4 NED/FRD quaternion to z-up frame quaternion (for vehicle_odometry)
+     * Mapping: (w, x, -y, -z) - flips z-axis while keeping x=forward, consistent with z-up position
+     * @param q_ned PX4 quaternion [w,x,y,z] in NED/FRD frame
+     * @param q_out Output quaternion in z-up frame
+     */
+    void ned_to_zup_quaternion(const float q_ned[4],
+                               geometry_msgs::msg::Quaternion& q_out);
+    
+    /**
+     * @brief Convert PX4 NED position to z-up frame (for vehicle_odometry)
+     * Direct mapping: position[0]=x, position[1]=y, -position[2]=z (up)
+     * @param pos_ned PX4 position [x,y,z] in NED frame
+     * @param pos_out Output position in z-up frame
+     */
+    void ned_to_zup_position(const float pos_ned[3],
+                             geometry_msgs::msg::Point& pos_out);
+    
+    /**
+     * @brief Convert PX4 NED velocity to z-up frame (for vehicle_odometry)
+     * Direct mapping: velocity[0]=vx, velocity[1]=vy, -velocity[2]=vz (up)
+     * @param vel_ned PX4 velocity [vx,vy,vz] in NED frame
+     * @param vel_out Output velocity in z-up frame
+     */
+    void ned_to_zup_velocity(const float vel_ned[3],
+                             geometry_msgs::msg::Vector3& vel_out);
+    
+    /**
+     * @brief Convert PX4 FRD angular velocity to z-up body frame angular velocity
+     * Mapping: (x, -y, -z) from body FRD to body FLU
+     * @param ang_frd PX4 angular velocity [wx,wy,wz] in body FRD frame
+     * @param ang_flu Output angular velocity in body FLU frame
+     */
+    void frd_to_flu_angular_velocity(const float ang_frd[3],
+                                     geometry_msgs::msg::Vector3& ang_flu);
     
     /**
      * @brief Set pose covariance based on PX4 validity flags
@@ -292,6 +363,14 @@ private:
      */
     void set_pose_covariance(const px4_msgs::msg::VehicleLocalPosition& position,
                             std::array<double, 36>& covariance);
+    
+    /**
+     * @brief Set pose covariance from VehicleOdometry variance fields
+     * @param odom PX4 VehicleOdometry message with variance info
+     * @param covariance Output 6x6 covariance matrix
+     */
+    void set_pose_covariance_from_odom(const px4_msgs::msg::VehicleOdometry& odom,
+                                       std::array<double, 36>& covariance);
     
     // === Message Statistics ===
     

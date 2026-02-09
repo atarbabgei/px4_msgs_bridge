@@ -13,6 +13,17 @@ px4_bridge_manager:
      
     # === PX4 → ROS Converter Configuration ===
     px4_to_ros:
+      # Position data source selection:
+      #   "vehicle_local_position" - uses /fmu/out/vehicle_attitude + /fmu/out/vehicle_local_position (default)
+      #   "vehicle_odometry"       - uses /fmu/out/vehicle_odometry (single-message alternative)
+      position_source: "vehicle_local_position"
+      
+      # Joint state source for propeller guard:
+      #   "wheel_encoders" - uses /fmu/out/wheel_encoders from PX4 (default, simulation)
+      #   "external"       - uses external /joint_states topic (real hardware)
+      joint_state_source: "wheel_encoders"
+      external_joint_state_topic: "/joint_states"  # Topic when joint_state_source is "external"
+      
       # Publishing options
       publish_pose: true        # shown as /{vehicle_namespace}/pose
       publish_path: true        # shown as /{vehicle_namespace}/path
