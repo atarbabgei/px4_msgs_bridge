@@ -235,6 +235,7 @@ private:
         // Joint state source: "wheel_encoders" or "external"
         std::string joint_state_source{"wheel_encoders"};
         std::string external_joint_state_topic{"/joint_states"};
+        std::string external_joint_name{"propeller_guard_joint"};  // Joint name to look for in external topic
         
         // Publishing enables
         bool publish_pose{true};

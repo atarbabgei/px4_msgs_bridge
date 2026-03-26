@@ -64,6 +64,12 @@ def generate_launch_description():
         description='External joint state topic (when joint_state_source is "external")'
     )
     
+    external_joint_name_arg = DeclareLaunchArgument(
+        'external_joint_name',
+        default_value='joint_0',
+        description='Joint name to look for in external topic (remapped to propeller_guard_joint for URDF)'
+    )
+    
     enable_rviz_arg = DeclareLaunchArgument(
         'enable_rviz',
         default_value='true',
@@ -82,6 +88,7 @@ def generate_launch_description():
             'px4_to_ros.position_source': LaunchConfiguration('position_source'),
             'px4_to_ros.joint_state_source': LaunchConfiguration('joint_state_source'),
             'px4_to_ros.external_joint_state_topic': LaunchConfiguration('external_joint_state_topic'),
+            'px4_to_ros.external_joint_name': LaunchConfiguration('external_joint_name'),
             'px4_to_ros.publish_joint_states': True,
             'px4_to_ros.publish_contact_point': False,  # Contact sensor not available on hardware yet
             'px4_to_ros.publish_pose': True,
@@ -142,6 +149,7 @@ def generate_launch_description():
         position_source_arg,
         joint_state_source_arg,
         external_joint_state_topic_arg,
+        external_joint_name_arg,
         enable_rviz_arg,
         
         # Nodes

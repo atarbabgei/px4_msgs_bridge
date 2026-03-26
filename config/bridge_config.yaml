@@ -23,6 +23,7 @@ px4_bridge_manager:
       #   "external"       - uses external /joint_states topic (real hardware)
       joint_state_source: "wheel_encoders"
       external_joint_state_topic: "/joint_states"  # Topic when joint_state_source is "external"
+      external_joint_name: "propeller_guard_joint"   # Joint name to look for in external topic (remapped to URDF name)
       
       # Publishing options
       publish_pose: true        # shown as /{vehicle_namespace}/pose

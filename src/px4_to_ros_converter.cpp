@@ -80,8 +80,8 @@ void Px4ToRosConverter::initialize()
             [this](const sensor_msgs::msg::JointState::SharedPtr msg) {
                 this->external_joint_state_callback(msg);
             });
-        RCLCPP_INFO(node_->get_logger(), "[%s] Joint state source: external (%s)", 
-                   name_.c_str(), config_.external_joint_state_topic.c_str());
+        RCLCPP_INFO(node_->get_logger(), "[%s] Joint state source: external (%s, joint: '%s' → 'propeller_guard_joint')", 
+                   name_.c_str(), config_.external_joint_state_topic.c_str(), config_.external_joint_name.c_str());
     } else {
         // Default: wheel_encoders
         wheel_encoder_sub_ = node_->create_subscription<px4_msgs::msg::WheelEncoders>(
@@ -188,6 +188,7 @@ void Px4ToRosConverter::load_configuration()
     node_->declare_parameter("px4_to_ros.position_source", config_.position_source);
     node_->declare_parameter("px4_to_ros.joint_state_source", config_.joint_state_source);
     node_->declare_parameter("px4_to_ros.external_joint_state_topic", config_.external_joint_state_topic);
+    node_->declare_parameter("px4_to_ros.external_joint_name", config_.external_joint_name);
     node_->declare_parameter("px4_to_ros.publish_pose", true);
     node_->declare_parameter("px4_to_ros.publish_path", true);
     node_->declare_parameter("px4_to_ros.publish_odometry", true);
@@ -206,6 +207,7 @@ void Px4ToRosConverter::load_configuration()
     config_.position_source = node_->get_parameter("px4_to_ros.position_source").as_string();
     config_.joint_state_source = node_->get_parameter("px4_to_ros.joint_state_source").as_string();
     config_.external_joint_state_topic = node_->get_parameter("px4_to_ros.external_joint_state_topic").as_string();
+    config_.external_joint_name = node_->get_parameter("px4_to_ros.external_joint_name").as_string();
     config_.publish_pose = node_->get_parameter("px4_to_ros.publish_pose").as_bool();
     config_.publish_path = node_->get_parameter("px4_to_ros.publish_path").as_bool();
     config_.publish_odometry = node_->get_parameter("px4_to_ros.publish_odometry").as_bool();
@@ -328,12 +330,13 @@ void Px4ToRosConverter::contact_debug_callback(const px4_msgs::msg::DebugValue::
 
 void Px4ToRosConverter::external_joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
 {
-    // Filter for propeller_guard_joint in the joint state message
+    // Filter for the configured joint name in the joint state message
+    // and remap it to "propeller_guard_joint" (matching the URDF joint name)
     for (size_t i = 0; i < msg->name.size(); ++i) {
-        if (msg->name[i] == "propeller_guard_joint") {
+        if (msg->name[i] == config_.external_joint_name) {
             latest_external_joint_state_ = *msg;
-            // Keep only the propeller_guard_joint data
-            latest_external_joint_state_.name = {msg->name[i]};
+            // Keep only the matched joint, remapped to URDF name
+            latest_external_joint_state_.name = {"propeller_guard_joint"};
             latest_external_joint_state_.position = (i < msg->position.size()) ? 
                 std::vector<double>{msg->position[i]} : std::vector<double>{};
             latest_external_joint_state_.velocity = (i < msg->velocity.size()) ? 
