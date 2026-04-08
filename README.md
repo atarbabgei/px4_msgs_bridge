@@ -1,7 +1,6 @@
 # PX4 Messages Bridge
 
-[![ROS 2 Humble](https://github.com/atarbabgei/px4_msgs_bridge/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/atarbabgei/px4_msgs_bridge/actions/workflows/ci.yaml)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![CI](https://github.com/atarbabgei/px4_msgs_bridge/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/atarbabgei/px4_msgs_bridge/actions/workflows/ci.yaml)
 
 Minimal, stateless PX4-ROS2 bridge. Converts PX4 messages to standard ROS 2 types (REP-103 ENU/FLU) for nav stack integration.
 

@@ -4,7 +4,7 @@
   <version>1.0.0</version>
   <description>Minimal, correct, zero-copy PX4-ROS2 bridge for nav stack integration</description>
   <maintainer email="atarbabgei@gmail.com">afb23</maintainer>
-  <license>Apache-2.0</license>
+  <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>eigen3_cmake_module</buildtool_depend>
