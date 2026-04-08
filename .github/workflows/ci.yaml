@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ros_distro: humble
+            px4_msgs_branch: release/1.15
+          - ros_distro: humble
+            px4_msgs_branch: release/1.16
+          - ros_distro: jazzy
+            px4_msgs_branch: release/1.16
+
+    container:
+      image: ros:${{ matrix.ros_distro }}-ros-base
+
+    steps:
+      - name: Install build tools
+        run: |
+          apt-get update
+          apt-get install -y git python3-colcon-common-extensions python3-rosdep
+          rosdep update
+
+      - name: Create workspace
+        run: mkdir -p /ros2_ws/src
+
+      - name: Clone px4_msgs
+        run: |
+          git clone --depth 1 https://github.com/PX4/px4_msgs.git \
+            -b ${{ matrix.px4_msgs_branch }} /ros2_ws/src/px4_msgs
+
+      - name: Checkout px4_msgs_bridge
+        uses: actions/checkout@v4
+        with:
+          path: /ros2_ws/src/px4_msgs_bridge
+
+      - name: Install dependencies
+        run: |
+          cd /ros2_ws
+          . /opt/ros/${{ matrix.ros_distro }}/setup.sh
+          rosdep install --from-paths src --ignore-src -r -y
+
+      - name: Build
+        run: |
+          cd /ros2_ws
+          . /opt/ros/${{ matrix.ros_distro }}/setup.sh
+          colcon build --packages-up-to px4_msgs_bridge --event-handlers console_direct+
+
+      - name: Test
+        run: |
+          cd /ros2_ws
+          . /opt/ros/${{ matrix.ros_distro }}/setup.sh
+          . install/setup.sh
+          colcon test --packages-select px4_msgs_bridge --event-handlers console_direct+
+          colcon test-result --verbose

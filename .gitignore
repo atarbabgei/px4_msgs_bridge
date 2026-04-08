@@ -1,5 +1,3 @@
-# Ignore all files in the .github directory
-.github/
 .claude/
 .idea/
 .vscode/
