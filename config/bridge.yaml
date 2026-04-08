@@ -1,0 +1,8 @@
+px4_bridge:
+  ros__parameters:
+    px4_namespace: ""
+    namespace: "vehicle"
+    odom_rate: 50.0
+    enable_tf: true
+    enable_external_odom: false
+    external_odom_topic: "/odom/sample"

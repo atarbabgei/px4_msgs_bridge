@@ -8,81 +8,62 @@ endif()
 # Find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_components REQUIRED)
 find_package(px4_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(std_msgs REQUIRED)
-find_package(std_srvs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
-find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(eigen3_cmake_module REQUIRED)
+find_package(Eigen3 REQUIRED)
 
-# Create shared bridge library
-add_library(px4_bridge_lib
-  src/bridge_base.cpp
-  src/converter_base.cpp
-  src/bridge_manager.cpp
-  src/px4_to_ros_converter.cpp
-  src/ros_to_px4_converter.cpp
+# Shared library (composable node)
+add_library(px4_bridge_lib SHARED
+  src/px4_bridge.cpp
 )
 
-# Set include directories for the library
-target_include_directories(px4_bridge_lib
-  PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-    $<INSTALL_INTERFACE:include>
+target_include_directories(px4_bridge_lib PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+  $<INSTALL_INTERFACE:include>
+  ${Eigen3_INCLUDE_DIRS}
 )
 
 ament_target_dependencies(px4_bridge_lib
   rclcpp
+  rclcpp_components
   px4_msgs
   geometry_msgs
-  std_msgs
-  std_srvs
   nav_msgs
   sensor_msgs
-  tf2
   tf2_ros
 )
 
-# Create unified bridge node executable
-add_executable(bridge_node
-  src/main.cpp
+target_link_libraries(px4_bridge_lib Eigen3::Eigen)
+
+# Register composable node
+rclcpp_components_register_node(px4_bridge_lib
+  PLUGIN "px4_bridge::Px4Bridge"
+  EXECUTABLE px4_bridge_component
 )
 
+# Standalone executable
+add_executable(bridge_node src/main.cpp)
 target_link_libraries(bridge_node px4_bridge_lib)
+ament_target_dependencies(bridge_node rclcpp)
 
-ament_target_dependencies(bridge_node
-  rclcpp
-  px4_msgs
-  geometry_msgs
-  std_msgs
-  std_srvs
-  nav_msgs
-  sensor_msgs
-  tf2
-  tf2_ros
-)
-
-# Install targets
-install(TARGETS
-  bridge_node
+# Install
+install(TARGETS bridge_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(TARGETS
-  px4_bridge_lib
+install(TARGETS px4_bridge_lib
   EXPORT ${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
 
-install(DIRECTORY
-  launch
-  config
-  rviz
-  urdf
+install(DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}
 )
 
