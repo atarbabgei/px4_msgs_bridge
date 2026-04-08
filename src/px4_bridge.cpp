@@ -3,6 +3,7 @@
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
+#include <limits>
 #include <rclcpp_components/register_node_macro.hpp>
 
 namespace px4_bridge {
@@ -118,8 +119,11 @@ void Px4Bridge::odomTimerCallback()
   const Eigen::Quaterniond q_ned(src.q[0], src.q[1], src.q[2], src.q[3]);
   const Eigen::Quaterniond q_enu = attitudeNedToEnu(q_ned);
 
-  const Eigen::Vector3d vel_enu = positionNedToEnu(
-    Eigen::Vector3d(src.velocity[0], src.velocity[1], src.velocity[2]));
+  // PX4 sends velocity in NED world frame; convert to body-frame FLU
+  // for nav_msgs/Odometry (twist must be in child_frame per REP-105).
+  const Eigen::Vector3d vel_ned(src.velocity[0], src.velocity[1], src.velocity[2]);
+  const Eigen::Vector3d vel_enu = positionNedToEnu(vel_ned);
+  const Eigen::Vector3d vel_body = q_enu.inverse() * vel_enu;
 
   const Eigen::Vector3d angvel_flu = frdToFlu(
     Eigen::Vector3d(src.angular_velocity[0], src.angular_velocity[1], src.angular_velocity[2]));
@@ -151,9 +155,9 @@ void Px4Bridge::odomTimerCallback()
   odom_msg->pose.covariance[28] = ori_var_enu.y();
   odom_msg->pose.covariance[35] = ori_var_enu.z();
 
-  odom_msg->twist.twist.linear.x = vel_enu.x();
-  odom_msg->twist.twist.linear.y = vel_enu.y();
-  odom_msg->twist.twist.linear.z = vel_enu.z();
+  odom_msg->twist.twist.linear.x = vel_body.x();
+  odom_msg->twist.twist.linear.y = vel_body.y();
+  odom_msg->twist.twist.linear.z = vel_body.z();
   odom_msg->twist.twist.angular.x = angvel_flu.x();
   odom_msg->twist.twist.angular.y = angvel_flu.y();
   odom_msg->twist.twist.angular.z = angvel_flu.z();
@@ -258,46 +262,44 @@ void Px4Bridge::externalOdomCallback(const nav_msgs::msg::Odometry::SharedPtr ms
     msg->header.stamp.sec * 1000000ULL + msg->header.stamp.nanosec / 1000ULL);
   px4_msg->timestamp_sample = px4_msg->timestamp;
 
-  const Eigen::Vector3d pos_ned = positionEnuToNed(Eigen::Vector3d(
-    msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z));
-  px4_msg->position[0] = static_cast<float>(pos_ned.x());
-  px4_msg->position[1] = static_cast<float>(pos_ned.y());
-  px4_msg->position[2] = static_cast<float>(pos_ned.z());
+  // FAST-LIO (and similar LIO/VIO) outputs in body-init FLU frame.
+  // Convert FLU (x,y,z) -> FRD (x,-y,-z) for PX4.
+  px4_msg->position[0] = static_cast<float>(msg->pose.pose.position.x);
+  px4_msg->position[1] = static_cast<float>(-msg->pose.pose.position.y);
+  px4_msg->position[2] = static_cast<float>(-msg->pose.pose.position.z);
 
-  const Eigen::Quaterniond q_enu(
-    msg->pose.pose.orientation.w, msg->pose.pose.orientation.x,
-    msg->pose.pose.orientation.y, msg->pose.pose.orientation.z);
-  const Eigen::Quaterniond q_ned = attitudeEnuToNed(q_enu);
-  px4_msg->q[0] = static_cast<float>(q_ned.w());
-  px4_msg->q[1] = static_cast<float>(q_ned.x());
-  px4_msg->q[2] = static_cast<float>(q_ned.y());
-  px4_msg->q[3] = static_cast<float>(q_ned.z());
+  // Quaternion FLU -> FRD: keep w,x, negate y,z
+  px4_msg->q[0] = static_cast<float>(msg->pose.pose.orientation.w);
+  px4_msg->q[1] = static_cast<float>(msg->pose.pose.orientation.x);
+  px4_msg->q[2] = static_cast<float>(-msg->pose.pose.orientation.y);
+  px4_msg->q[3] = static_cast<float>(-msg->pose.pose.orientation.z);
 
-  const Eigen::Vector3d vel_ned = positionEnuToNed(Eigen::Vector3d(
-    msg->twist.twist.linear.x, msg->twist.twist.linear.y, msg->twist.twist.linear.z));
-  px4_msg->velocity[0] = static_cast<float>(vel_ned.x());
-  px4_msg->velocity[1] = static_cast<float>(vel_ned.y());
-  px4_msg->velocity[2] = static_cast<float>(vel_ned.z());
+  px4_msg->pose_frame = px4_msgs::msg::VehicleOdometry::POSE_FRAME_FRD;
+  px4_msg->velocity_frame = px4_msgs::msg::VehicleOdometry::VELOCITY_FRAME_FRD;
 
-  const Eigen::Vector3d angvel_frd = fluToFrd(Eigen::Vector3d(
-    msg->twist.twist.angular.x, msg->twist.twist.angular.y, msg->twist.twist.angular.z));
-  px4_msg->angular_velocity[0] = static_cast<float>(angvel_frd.x());
-  px4_msg->angular_velocity[1] = static_cast<float>(angvel_frd.y());
-  px4_msg->angular_velocity[2] = static_cast<float>(angvel_frd.z());
+  // Set velocities to NaN — position-only fusion
+  px4_msg->velocity[0] = std::numeric_limits<float>::quiet_NaN();
+  px4_msg->velocity[1] = std::numeric_limits<float>::quiet_NaN();
+  px4_msg->velocity[2] = std::numeric_limits<float>::quiet_NaN();
+  px4_msg->angular_velocity[0] = std::numeric_limits<float>::quiet_NaN();
+  px4_msg->angular_velocity[1] = std::numeric_limits<float>::quiet_NaN();
+  px4_msg->angular_velocity[2] = std::numeric_limits<float>::quiet_NaN();
 
-  px4_msg->pose_frame = px4_msgs::msg::VehicleOdometry::POSE_FRAME_NED;
-  px4_msg->velocity_frame = px4_msgs::msg::VehicleOdometry::VELOCITY_FRAME_NED;
-
+  // Variance: no axis swap needed for FLU->FRD (variance is always positive)
   const auto& pc = msg->pose.covariance;
-  const Eigen::Vector3d pos_var_ned = varianceEnuToNed(Eigen::Vector3d(pc[0], pc[7], pc[14]));
-  px4_msg->position_variance[0] = static_cast<float>(pos_var_ned.x());
-  px4_msg->position_variance[1] = static_cast<float>(pos_var_ned.y());
-  px4_msg->position_variance[2] = static_cast<float>(pos_var_ned.z());
+  px4_msg->position_variance[0] = static_cast<float>(pc[0]);
+  px4_msg->position_variance[1] = static_cast<float>(pc[7]);
+  px4_msg->position_variance[2] = static_cast<float>(pc[14]);
 
-  const Eigen::Vector3d ori_var_ned = varianceEnuToNed(Eigen::Vector3d(pc[21], pc[28], pc[35]));
-  px4_msg->orientation_variance[0] = static_cast<float>(ori_var_ned.x());
-  px4_msg->orientation_variance[1] = static_cast<float>(ori_var_ned.y());
-  px4_msg->orientation_variance[2] = static_cast<float>(ori_var_ned.z());
+  px4_msg->orientation_variance[0] = static_cast<float>(pc[21]);
+  px4_msg->orientation_variance[1] = static_cast<float>(pc[28]);
+  px4_msg->orientation_variance[2] = static_cast<float>(pc[35]);
+
+  px4_msg->velocity_variance[0] = 0.0f;
+  px4_msg->velocity_variance[1] = 0.0f;
+  px4_msg->velocity_variance[2] = 0.0f;
+
+  px4_msg->quality = 1;
 
   vio_pub_->publish(std::move(px4_msg));
 }

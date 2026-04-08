@@ -67,8 +67,8 @@ px4_bridge:
     namespace: "vehicle"           # ROS 2 output: /vehicle/odom, vehicle/base_link
     odom_rate: 50.0
     enable_tf: true
-    enable_external_odom: false
-    external_odom_topic: "/odom/sample"
+    enable_external_odom: true
+    external_odom_topic: "/Odometry"
 ```
 
 ## License
