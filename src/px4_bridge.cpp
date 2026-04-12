@@ -27,6 +27,48 @@ rclcpp::Time Px4Bridge::toRosTime(uint64_t px4_timestamp_us)
   return rclcpp::Time(static_cast<int64_t>(px4_timestamp_us) * 1000, RCL_SYSTEM_TIME);
 }
 
+void Px4Bridge::imuStatusCallback(const px4_msgs::msg::VehicleImuStatus::SharedPtr msg)
+{
+  imu_noise_.var_gyro[0] = msg->var_gyro[0];
+  imu_noise_.var_gyro[1] = msg->var_gyro[1];
+  imu_noise_.var_gyro[2] = msg->var_gyro[2];
+  imu_noise_.var_accel[0] = msg->var_accel[0];
+  imu_noise_.var_accel[1] = msg->var_accel[1];
+  imu_noise_.var_accel[2] = msg->var_accel[2];
+  imu_noise_.received = true;
+}
+
+void Px4Bridge::publishImu(const rclcpp::Time& stamp,
+                           const Eigen::Vector3d& gyro_flu,
+                           const Eigen::Vector3d& accel_flu)
+{
+  auto imu_msg = std::make_unique<sensor_msgs::msg::Imu>();
+  imu_msg->header.stamp = stamp;
+  imu_msg->header.frame_id = base_link_frame_;
+
+  imu_msg->orientation.w = 1.0;
+  imu_msg->orientation_covariance[0] = -1.0;
+
+  imu_msg->angular_velocity.x = gyro_flu.x();
+  imu_msg->angular_velocity.y = gyro_flu.y();
+  imu_msg->angular_velocity.z = gyro_flu.z();
+
+  imu_msg->linear_acceleration.x = accel_flu.x();
+  imu_msg->linear_acceleration.y = accel_flu.y();
+  imu_msg->linear_acceleration.z = accel_flu.z();
+
+  if (imu_noise_.received) {
+    imu_msg->angular_velocity_covariance[0] = imu_noise_.var_gyro[0];
+    imu_msg->angular_velocity_covariance[4] = imu_noise_.var_gyro[1];
+    imu_msg->angular_velocity_covariance[8] = imu_noise_.var_gyro[2];
+    imu_msg->linear_acceleration_covariance[0] = imu_noise_.var_accel[0];
+    imu_msg->linear_acceleration_covariance[4] = imu_noise_.var_accel[1];
+    imu_msg->linear_acceleration_covariance[8] = imu_noise_.var_accel[2];
+  }
+
+  imu_pub_->publish(std::move(imu_msg));
+}
+
 Px4Bridge::Px4Bridge(const rclcpp::NodeOptions& options)
   : Node("px4_bridge", options)
 {
@@ -37,6 +79,8 @@ Px4Bridge::Px4Bridge(const rclcpp::NodeOptions& options)
   const bool enable_external_odom = declare_parameter("enable_external_odom", false);
   const std::string ext_odom_topic =
     declare_parameter("external_odom_topic", "/odom/sample");
+  const std::string imu_source =
+    declare_parameter("imu_source", "/fmu/out/sensor_combined");
 
   // PX4 topic prefix: "" -> "/fmu", "drone_0" -> "/drone_0/fmu"
   const std::string fmu = px4_ns.empty() ? "/fmu" : "/" + px4_ns + "/fmu";
@@ -60,9 +104,30 @@ Px4Bridge::Px4Bridge(const rclcpp::NodeOptions& options)
     std::chrono::duration_cast<std::chrono::nanoseconds>(period),
     std::bind(&Px4Bridge::odomTimerCallback, this));
 
-  imu_sub_ = create_subscription<px4_msgs::msg::SensorCombined>(
-    fmu + "/out/sensor_combined", px4Qos(),
-    std::bind(&Px4Bridge::imuCallback, this, std::placeholders::_1));
+  const std::string imu_topic_vehicle_imu = fmu + "/out/vehicle_imu";
+  const std::string imu_topic_sensor_combined = fmu + "/out/sensor_combined";
+  std::string imu_topic_active;
+
+  if (imu_source == imu_topic_vehicle_imu) {
+    imu_topic_active = imu_topic_vehicle_imu;
+    vehicle_imu_sub_ = create_subscription<px4_msgs::msg::VehicleImu>(
+      imu_topic_vehicle_imu, px4Qos(),
+      std::bind(&Px4Bridge::vehicleImuCallback, this, std::placeholders::_1));
+  } else {
+    imu_topic_active = imu_topic_sensor_combined;
+    if (imu_source != imu_topic_sensor_combined) {
+      RCLCPP_ERROR(get_logger(),
+        "Unknown imu_source '%s', falling back to %s",
+        imu_source.c_str(), imu_topic_sensor_combined.c_str());
+    }
+    sensor_combined_sub_ = create_subscription<px4_msgs::msg::SensorCombined>(
+      imu_topic_sensor_combined, px4Qos(),
+      std::bind(&Px4Bridge::sensorCombinedCallback, this, std::placeholders::_1));
+  }
+
+  imu_status_sub_ = create_subscription<px4_msgs::msg::VehicleImuStatus>(
+    fmu + "/out/vehicle_imu_status", px4Qos(),
+    std::bind(&Px4Bridge::imuStatusCallback, this, std::placeholders::_1));
 
   imu_pub_ = create_publisher<sensor_msgs::msg::Imu>(
     "/" + namespace_ + "/imu", rosQos());
@@ -90,7 +155,8 @@ Px4Bridge::Px4Bridge(const rclcpp::NodeOptions& options)
   RCLCPP_INFO(get_logger(), "PX4 Bridge started (px4=%s, ns=%s)",
     px4_ns.empty() ? "(default)" : px4_ns.c_str(), namespace_.c_str());
   RCLCPP_INFO(get_logger(), "  %s/out/vehicle_odometry -> /%s/odom (%.0fHz)", fmu.c_str(), namespace_.c_str(), odom_rate);
-  RCLCPP_INFO(get_logger(), "  %s/out/sensor_combined  -> /%s/imu", fmu.c_str(), namespace_.c_str());
+  RCLCPP_INFO(get_logger(), "  %s -> /%s/imu", imu_topic_active.c_str(), namespace_.c_str());
+  RCLCPP_INFO(get_logger(), "  %s/out/vehicle_imu_status -> imu covariance", fmu.c_str());
   RCLCPP_INFO(get_logger(), "  %s/out/vehicle_global_position -> /%s/gps (on fix)", fmu.c_str(), namespace_.c_str());
   RCLCPP_INFO(get_logger(), "  %s/out/camera_trigger -> /%s/camera_trigger", fmu.c_str(), namespace_.c_str());
   if (tf_broadcaster_)
@@ -180,7 +246,7 @@ void Px4Bridge::odomTimerCallback()
   odom_pub_->publish(std::move(odom_msg));
 }
 
-void Px4Bridge::imuCallback(const px4_msgs::msg::SensorCombined::SharedPtr msg)
+void Px4Bridge::sensorCombinedCallback(const px4_msgs::msg::SensorCombined::SharedPtr msg)
 {
   const auto stamp = toRosTime(msg->timestamp);
 
@@ -189,22 +255,40 @@ void Px4Bridge::imuCallback(const px4_msgs::msg::SensorCombined::SharedPtr msg)
   const Eigen::Vector3d accel_flu = frdToFlu(
     Eigen::Vector3d(msg->accelerometer_m_s2[0], msg->accelerometer_m_s2[1], msg->accelerometer_m_s2[2]));
 
-  auto imu_msg = std::make_unique<sensor_msgs::msg::Imu>();
-  imu_msg->header.stamp = stamp;
-  imu_msg->header.frame_id = base_link_frame_;
+  publishImu(stamp, gyro_flu, accel_flu);
+}
 
-  imu_msg->orientation.w = 1.0;
-  imu_msg->orientation_covariance[0] = -1.0;
+void Px4Bridge::vehicleImuCallback(const px4_msgs::msg::VehicleImu::SharedPtr msg)
+{
+  // vehicle_imu is a multi-instance topic (one per physical IMU).
+  // Latch the first device_id we see and ignore subsequent instances.
+  if (imu_device_id_ == 0) {
+    imu_device_id_ = msg->accel_device_id;
+    RCLCPP_INFO(get_logger(), "vehicle_imu: latched accel_device_id=%u", imu_device_id_);
+  } else if (msg->accel_device_id != imu_device_id_) {
+    return;
+  }
 
-  imu_msg->angular_velocity.x = gyro_flu.x();
-  imu_msg->angular_velocity.y = gyro_flu.y();
-  imu_msg->angular_velocity.z = gyro_flu.z();
+  const auto stamp = toRosTime(msg->timestamp_sample);
 
-  imu_msg->linear_acceleration.x = accel_flu.x();
-  imu_msg->linear_acceleration.y = accel_flu.y();
-  imu_msg->linear_acceleration.z = accel_flu.z();
+  const double gyro_dt = static_cast<double>(msg->delta_angle_dt) * 1e-6;
+  const double accel_dt = static_cast<double>(msg->delta_velocity_dt) * 1e-6;
 
-  imu_pub_->publish(std::move(imu_msg));
+  if (gyro_dt <= 0.0 || accel_dt <= 0.0) {
+    return;
+  }
+
+  const Eigen::Vector3d gyro_flu = frdToFlu(Eigen::Vector3d(
+    msg->delta_angle[0] / gyro_dt,
+    msg->delta_angle[1] / gyro_dt,
+    msg->delta_angle[2] / gyro_dt));
+
+  const Eigen::Vector3d accel_flu = frdToFlu(Eigen::Vector3d(
+    msg->delta_velocity[0] / accel_dt,
+    msg->delta_velocity[1] / accel_dt,
+    msg->delta_velocity[2] / accel_dt));
+
+  publishImu(stamp, gyro_flu, accel_flu);
 }
 
 void Px4Bridge::gpsCallback(const px4_msgs::msg::VehicleGlobalPosition::SharedPtr msg)

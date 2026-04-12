@@ -1,8 +1,25 @@
 px4_bridge:
   ros__parameters:
+    # PX4 namespace prefix: "" for single vehicle, "drone_0" for multi-vehicle
+    # "" -> /fmu/out/..., "drone_0" -> /drone_0/fmu/out/...
     px4_namespace: ""
+
+    # ROS2 output namespace: topics publish under /<namespace>/odom, /<namespace>/imu, etc.
     namespace: "vehicle"
+
+    # Odometry publish rate (Hz). Nav stacks typically expect 50Hz.
     odom_rate: 50.0
+
+    # Broadcast TF: <namespace>/odom -> <namespace>/base_link
     enable_tf: true
+
+    # External odometry input (VIO/LIO) for PX4 fusion via /fmu/in/vehicle_visual_odometry
     enable_external_odom: false
     external_odom_topic: "/odom/sample"
+
+    # IMU source topic from PX4 DDS.
+    #   "/fmu/out/sensor_combined" - default, works with stock PX4 firmware
+    #   "/fmu/out/vehicle_imu"    - calibrated integrated deltas, uses timestamp_sample,
+    #                                requires vehicle_imu enabled in PX4 dds_topics.yaml
+    # Covariance is always filled from /fmu/out/vehicle_imu_status (live measured variance).
+    imu_source: "/fmu/out/sensor_combined"

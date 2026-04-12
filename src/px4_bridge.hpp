@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <Eigen/Core>
 #include <rclcpp/rclcpp.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <sensor_msgs/msg/imu.hpp>
@@ -14,11 +15,19 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <px4_msgs/msg/vehicle_odometry.hpp>
 #include <px4_msgs/msg/sensor_combined.hpp>
+#include <px4_msgs/msg/vehicle_imu.hpp>
+#include <px4_msgs/msg/vehicle_imu_status.hpp>
 #include <px4_msgs/msg/vehicle_global_position.hpp>
 #include <px4_msgs/msg/camera_trigger.hpp>
 #include <sensor_msgs/msg/time_reference.hpp>
 
 namespace px4_bridge {
+
+struct ImuNoiseState {
+  float var_accel[3] = {0.f, 0.f, 0.f};
+  float var_gyro[3] = {0.f, 0.f, 0.f};
+  bool received = false;
+};
 
 class Px4Bridge : public rclcpp::Node
 {
@@ -28,7 +37,12 @@ public:
 private:
   // Callbacks
   void odomCallback(const px4_msgs::msg::VehicleOdometry::SharedPtr msg);
-  void imuCallback(const px4_msgs::msg::SensorCombined::SharedPtr msg);
+  void sensorCombinedCallback(const px4_msgs::msg::SensorCombined::SharedPtr msg);
+  void vehicleImuCallback(const px4_msgs::msg::VehicleImu::SharedPtr msg);
+  void imuStatusCallback(const px4_msgs::msg::VehicleImuStatus::SharedPtr msg);
+  void publishImu(const rclcpp::Time& stamp,
+                  const Eigen::Vector3d& gyro_flu,
+                  const Eigen::Vector3d& accel_flu);
   void gpsCallback(const px4_msgs::msg::VehicleGlobalPosition::SharedPtr msg);
   void triggerCallback(const px4_msgs::msg::CameraTrigger::SharedPtr msg);
   void externalOdomCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
@@ -39,7 +53,9 @@ private:
 
   // Subscribers
   rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr odom_sub_;
-  rclcpp::Subscription<px4_msgs::msg::SensorCombined>::SharedPtr imu_sub_;
+  rclcpp::Subscription<px4_msgs::msg::SensorCombined>::SharedPtr sensor_combined_sub_;
+  rclcpp::Subscription<px4_msgs::msg::VehicleImu>::SharedPtr vehicle_imu_sub_;
+  rclcpp::Subscription<px4_msgs::msg::VehicleImuStatus>::SharedPtr imu_status_sub_;
   rclcpp::Subscription<px4_msgs::msg::VehicleGlobalPosition>::SharedPtr gps_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr ext_odom_sub_;
   rclcpp::Subscription<px4_msgs::msg::CameraTrigger>::SharedPtr trigger_sub_;
@@ -59,6 +75,8 @@ private:
 
   // State
   px4_msgs::msg::VehicleOdometry::SharedPtr latest_odom_;
+  ImuNoiseState imu_noise_;
+  uint32_t imu_device_id_ = 0;  // latched on first vehicle_imu message
 
   // Config
   std::string namespace_;
